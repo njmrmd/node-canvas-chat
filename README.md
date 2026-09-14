@@ -69,7 +69,30 @@ pnpm build          # next build
 ```
 
 All four run in GitHub Actions on every push and pull request
-(`.github/workflows/ci.yml`). The tests need no database.
+(`.github/workflows/ci.yml`) and must be green. The tests need no database.
+
+### Browser tests
+
+```bash
+pnpm exec playwright install chromium   # once per machine, ~180 MB
+pnpm test:e2e                           # boots next dev itself, then drives it
+```
+
+The browser belongs to the project, not to the machine: `@playwright/test` is
+pinned to an exact version in `package.json`, and `playwright install` fetches
+the Chrome for Testing build that matches it. Every checkout and every CI run
+therefore drives the same browser revision, and nothing launches a
+host-installed Chrome.
+
+`pnpm test:e2e` starts `next dev` on port 3100, waits for `/api/health`, runs
+the specs and shuts the server down — no dev server to start first, and no
+environment variables, because the current specs only touch public pages. Set
+`E2E_BASE_URL` to run the same specs against an already-running server or a
+preview deployment. Options and the house rules for writing specs are in
+[`e2e/README.md`](e2e/README.md).
+
+These run in CI as a separate, **non-blocking** job. They are new enough that
+their stability is unproven, so they report without gating a merge.
 
 ## How a key is protected
 
