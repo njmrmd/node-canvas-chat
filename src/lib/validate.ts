@@ -1,5 +1,10 @@
 import { ApiError } from "@/lib/http";
-import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from "@/lib/crypto/password";
+import {
+  checkEmail,
+  checkExistingPassword,
+  checkNewPassword,
+  normaliseEmail,
+} from "@/lib/auth/credentials";
 
 /**
  * Hand-rolled validation rather than a schema library.
@@ -9,8 +14,10 @@ import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from "@/lib/crypto/password"
  * every dependency is a decision. If the surface grows past a dozen shapes,
  * revisit — this is a judgement about size, not a principle about libraries.
  *
- * Everything here collects per-field messages so the client can render errors
- * next to the input that caused them.
+ * The rules themselves live in `@/lib/auth/credentials` because the sign-up
+ * form applies the same ones in the browser. This module is the server half:
+ * it collects per-field messages so the client can render errors next to the
+ * input that caused them, and it is the half that actually decides.
  */
 
 export class FieldErrors {
@@ -29,56 +36,28 @@ export class FieldErrors {
   }
 }
 
-/**
- * Deliberately permissive: `something@something.tld` with no whitespace. A
- * stricter regex rejects real addresses, and we do not need to *prove* the
- * address is deliverable — we only need it to be a sane unique handle.
- */
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
-const EMAIL_MAX_LENGTH = 254; // RFC 5321 practical maximum.
-
-/** Normalises to lowercase — the unique index is the case-insensitivity guard. */
 export function parseEmail(
   value: unknown,
   errors: FieldErrors,
 ): string | null {
-  if (typeof value !== "string" || value.trim() === "") {
-    errors.add("email", "Enter your email address.");
+  const message = checkEmail(value);
+  if (message) {
+    errors.add("email", message);
     return null;
   }
-
-  const email = value.trim().toLowerCase();
-  if (email.length > EMAIL_MAX_LENGTH || !EMAIL_PATTERN.test(email)) {
-    errors.add("email", "That does not look like an email address.");
-    return null;
-  }
-
-  return email;
+  return normaliseEmail(value as string);
 }
 
 export function parseNewPassword(
   value: unknown,
   errors: FieldErrors,
 ): string | null {
-  if (typeof value !== "string" || value === "") {
-    errors.add("password", "Choose a password.");
+  const message = checkNewPassword(value);
+  if (message) {
+    errors.add("password", message);
     return null;
   }
-
-  if (value.length < PASSWORD_MIN_LENGTH) {
-    errors.add(
-      "password",
-      `Use at least ${PASSWORD_MIN_LENGTH} characters. Length beats punctuation.`,
-    );
-    return null;
-  }
-
-  if (value.length > PASSWORD_MAX_LENGTH) {
-    errors.add("password", `Use at most ${PASSWORD_MAX_LENGTH} characters.`);
-    return null;
-  }
-
-  return value;
+  return value as string;
 }
 
 /** Sign-in does not re-apply strength rules — only shape. */
@@ -86,14 +65,10 @@ export function parseExistingPassword(
   value: unknown,
   errors: FieldErrors,
 ): string | null {
-  if (typeof value !== "string" || value === "") {
-    errors.add("password", "Enter your password.");
+  const message = checkExistingPassword(value);
+  if (message) {
+    errors.add("password", message);
     return null;
   }
-  if (value.length > PASSWORD_MAX_LENGTH) {
-    // Do not spend scrypt CPU on an oversized candidate.
-    errors.add("password", "Enter your password.");
-    return null;
-  }
-  return value;
+  return value as string;
 }

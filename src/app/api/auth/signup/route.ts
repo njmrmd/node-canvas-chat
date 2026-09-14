@@ -18,13 +18,20 @@ export const dynamic = "force-dynamic";
 export const POST = withRoute("signup", async (request: Request) => {
   assertSameOrigin(request);
 
-  const limit = await enforce(POLICIES.signUp, ipSubject(request));
-
   const body = await readJsonBody(request);
   const errors = new FieldErrors();
   const email = parseEmail(body.email, errors);
   const password = parseNewPassword(body.password, errors);
   errors.throwIfAny();
+
+  // Counted *after* validation, deliberately. The limit exists to stop scripted
+  // account farming, and a request that fails validation does no database write
+  // and no scrypt — it is not an attempt at an account, so it does not buy one.
+  // Charging for it meant a stranger fumbling this form could spend their five
+  // tries on typos and be locked out of signing up at all. Malformed requests
+  // are now free, which is the right trade: they cost us nothing to refuse,
+  // while anything that could actually create an account is still counted.
+  const limit = await enforce(POLICIES.signUp, ipSubject(request));
 
   const passwordHash = await hashPassword(password!);
 

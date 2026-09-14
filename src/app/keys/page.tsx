@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { KeyManager } from "@/components/key-manager";
 import { getSessionUser } from "@/lib/auth/session";
+import { signInHref } from "@/lib/auth/next-path";
 import { isDatabaseConfigured } from "@/lib/db";
 import { listKeys } from "@/lib/keys";
 import { PROVIDERS, PROVIDER_IDS } from "@/lib/providers/registry";
@@ -17,10 +18,14 @@ export const metadata = { title: "Model access · Node Canvas Chat" };
  * same question as whether it names a live session.
  */
 export default async function KeysPage() {
-  if (!isDatabaseConfigured()) redirect("/sign-in");
+  // Carry the destination through the bounce, so signing in resumes the trip
+  // the visitor was on instead of landing them somewhere they did not ask for.
+  // The path is a literal here: this page's own route is the only honest
+  // answer, and taking it from a header would let a caller choose it.
+  if (!isDatabaseConfigured()) redirect(signInHref("/keys"));
 
   const user = await getSessionUser();
-  if (!user) redirect("/sign-in");
+  if (!user) redirect(signInHref("/keys"));
 
   return (
     <KeyManager

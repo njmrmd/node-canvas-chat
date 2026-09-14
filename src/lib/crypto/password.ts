@@ -39,12 +39,11 @@ const MAX_MEM = 192 * 1024 * 1024;
 
 const SALT_BYTES = 16;
 
-export const PASSWORD_MIN_LENGTH = 10;
-/**
- * bcrypt's 72-byte truncation does not apply to scrypt, but an unbounded
- * password is a denial-of-service knob: the caller controls how much we hash.
+/*
+ * The length bounds moved to `@/lib/auth/credentials`, which the sign-up form
+ * also imports. This module pulls in `node:crypto`, so it cannot be the shared
+ * home for anything the browser needs.
  */
-export const PASSWORD_MAX_LENGTH = 200;
 
 async function derive(password: string, salt: Buffer): Promise<Buffer> {
   return scryptAsync(password.normalize("NFKC"), salt, KEY_LENGTH, {

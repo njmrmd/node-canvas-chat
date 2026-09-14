@@ -18,13 +18,17 @@ export const dynamic = "force-dynamic";
 export const POST = withRoute("signin", async (request: Request) => {
   assertSameOrigin(request);
 
-  const limit = await enforce(POLICIES.signIn, ipSubject(request));
-
   const body = await readJsonBody(request);
   const errors = new FieldErrors();
   const email = parseEmail(body.email, errors);
   const password = parseExistingPassword(body.password, errors);
   errors.throwIfAny();
+
+  // Counted after validation — a body that is not even shaped like a credential
+  // pair cannot be a guess at one, so it does not spend a slot. Sign-in's shape
+  // rules are only shape rules, so every real stuffing attempt still counts;
+  // the only requests that now go free are ones no attacker benefits from.
+  const limit = await enforce(POLICIES.signIn, ipSubject(request));
 
   const row = await queryOne<{
     id: string;
