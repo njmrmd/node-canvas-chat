@@ -12,14 +12,28 @@ import { PROVIDERS } from "@/lib/providers/registry";
  * Deliberately not here: build metadata. `/api/health` already reports the
  * environment, branch and commit, and that is the right home for it.
  *
- * The styling rides the placeholder tokens in `globals.css`, matching the auth
- * screens so the first two steps of the journey feel like one product. Design
- * Engineer owns how this reads and looks.
+ * The styling uses the tokens in `globals.css` and mirrors the control shapes
+ * in `components/ui.tsx` (44px targets, the same focus ring) so the first two
+ * steps of the journey read as one product. It deliberately does not import
+ * `ui.tsx` yet: that shell is a form column at `--measure`, and a hero is not.
+ * Folding this page into those primitives is a follow-up once the pre-canvas
+ * design pass lands. Design Engineer owns how this reads and looks.
  */
 
 export const dynamic = "force-dynamic";
 
 const GITHUB_URL = "https://github.com/njmrmd/node-canvas-chat";
+
+const FOCUS_RING =
+  "outline-none focus-visible:ring-2 focus-visible:ring-foreground focus-visible:ring-offset-2 focus-visible:ring-offset-background";
+
+/**
+ * `min-h-11` keeps both actions at or above the 44px tap target — the whole
+ * point of this page is that a thumb on a phone can reach sign-up.
+ */
+const CONTROL = `inline-flex min-h-11 items-center justify-center rounded-md px-4 text-sm font-medium transition-colors ${FOCUS_RING}`;
+
+const TEXT_LINK = `rounded-xs underline decoration-hairline underline-offset-4 transition-colors hover:decoration-current ${FOCUS_RING}`;
 
 const steps = [
   {
@@ -67,7 +81,7 @@ export default async function Home() {
               <PrimaryLink href="/sign-up">Create an account</PrimaryLink>
               <Link
                 href="/sign-in"
-                className="rounded-md px-4 py-2.5 text-center text-sm font-medium text-muted underline decoration-hairline underline-offset-4 transition-colors hover:decoration-current focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30 motion-reduce:transition-none"
+                className={`${CONTROL} border border-transparent text-muted hover:text-foreground`}
               >
                 I already have an account
               </Link>
@@ -83,7 +97,7 @@ export default async function Home() {
               You bring your own model access: you will need an{" "}
               <a
                 href={PROVIDERS.anthropic.consoleUrl}
-                className="underline decoration-hairline underline-offset-4 transition-colors hover:decoration-current focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30 motion-reduce:transition-none"
+                className={TEXT_LINK}
                 target="_blank"
                 rel="noreferrer"
               >
@@ -117,7 +131,7 @@ export default async function Home() {
         <p className="mt-8 text-sm text-muted">
           Open source, MIT licensed.{" "}
           <a
-            className="underline decoration-hairline underline-offset-4 transition-colors hover:decoration-current focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30 motion-reduce:transition-none"
+            className={TEXT_LINK}
             href={GITHUB_URL}
           >
             Source on GitHub
@@ -128,11 +142,7 @@ export default async function Home() {
   );
 }
 
-/**
- * Matches the submit button on the auth screens — one primary action shape.
- * The focus ring sits outside the fill; `foreground/30` would vanish against a
- * foreground-coloured button.
- */
+/** The primary action shape shared with the auth screens' submit button. */
 function PrimaryLink({
   href,
   children,
@@ -143,7 +153,7 @@ function PrimaryLink({
   return (
     <Link
       href={href}
-      className="rounded-md bg-foreground px-4 py-2.5 text-center text-sm font-medium text-background transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground focus-visible:ring-offset-2 focus-visible:ring-offset-background motion-reduce:transition-none"
+      className={`${CONTROL} border border-foreground bg-foreground text-background hover:opacity-90`}
     >
       {children}
     </Link>
