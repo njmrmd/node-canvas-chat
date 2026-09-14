@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ApiCallError, apiFetch } from "@/lib/api-client";
+import { Consequence } from "@/components/consequence";
 
 /**
  * Sign-up and sign-in. One component, because the two forms differ only in
@@ -11,7 +12,7 @@ import { ApiCallError, apiFetch } from "@/lib/api-client";
  * handling cannot drift between them.
  *
  * Platform Engineer owns what this does. Design Engineer owns how it looks and
- * reads; the styling here is a working baseline, not the visual direction.
+ * reads.
  */
 
 type Mode = "sign-up" | "sign-in";
@@ -22,15 +23,30 @@ type Mode = "sign-up" | "sign-in";
  * chosen, and again on the screen where a locked-out person lands. A stranger
  * locked out with no warning is a worse impression than a missing feature
  * honestly labelled.
+ *
+ * Both are `Consequence` blocks rather than hint text. The rule about length
+ * is advice and can live in the small muted slot under the field; the warning
+ * is the part that changes what someone does with the next thirty seconds, and
+ * advice-weight type is where a warning goes to be ignored.
  */
-const NO_RECOVERY_HINT =
-  "At least 10 characters. Length beats punctuation. Write it down — there is no password reset yet, so a lost password cannot be recovered.";
+const NO_RESET = {
+  signUp: {
+    lead: "Save this password somewhere you can find it again.",
+    detail:
+      "There is no reset yet, so a lost password cannot be recovered.",
+  },
+  signIn: {
+    lead: "Forgotten your password? We cannot reset it yet — that is a gap on our side, not a policy.",
+    detail:
+      "The way back in is a new account, and you will need to reconnect your model key.",
+  },
+} as const;
 
 const COPY = {
   "sign-up": {
     heading: "Create an account",
     subheading:
-      "You bring your own model access. We never see your provider bill, and you can delete everything in one click.",
+      "You bring your own model access. We never see your provider bill, and you can delete your account and your key at any time.",
     submit: "Create account",
     busy: "Creating account…",
     endpoint: "/api/auth/signup",
@@ -38,7 +54,8 @@ const COPY = {
     footerLink: "Sign in",
     footerHref: "/sign-in",
     autoComplete: "new-password",
-    passwordHint: NO_RECOVERY_HINT,
+    passwordHint: "At least 10 characters. Length beats punctuation.",
+    warning: NO_RESET.signUp,
     note: null,
   },
   "sign-in": {
@@ -52,7 +69,8 @@ const COPY = {
     footerHref: "/sign-up",
     autoComplete: "current-password",
     passwordHint: undefined,
-    note: "Forgotten your password? There is no reset yet — create a new account to carry on. You will need to reconnect your model key.",
+    warning: null,
+    note: NO_RESET.signIn,
   },
 } as const satisfies Record<Mode, unknown>;
 
@@ -147,8 +165,22 @@ export function AuthForm({ mode }: { mode: Mode }) {
             error={fieldErrors.password}
             autoComplete={copy.autoComplete}
             hint={copy.passwordHint}
+            describedBy={copy.warning ? ["password-no-reset"] : undefined}
             disabled={busy}
           />
+
+          {/*
+            Inside the form and above the submit button: the warning has to be
+            passed on the way to the commitment, not found afterwards.
+          */}
+          {copy.warning ? (
+            <Consequence
+              id="password-no-reset"
+              emphasis="region"
+              lead={copy.warning.lead}
+              detail={copy.warning.detail}
+            />
+          ) : null}
 
           <button
             type="submit"
@@ -169,10 +201,15 @@ export function AuthForm({ mode }: { mode: Mode }) {
           </Link>
         </p>
 
+        {/*
+          Separated from the footer by a rule. Stacked directly under "No
+          account yet? Create one" it read as a second, competing sign-up
+          prompt; it is its own answer to its own question.
+        */}
         {copy.note ? (
-          <p className="mt-3 text-pretty text-xs leading-relaxed text-muted">
-            {copy.note}
-          </p>
+          <div className="mt-8 border-t border-hairline pt-6">
+            <Consequence lead={copy.note.lead} detail={copy.note.detail} />
+          </div>
         ) : null}
       </main>
     </div>
@@ -187,14 +224,21 @@ function Field(props: {
   onChange: (value: string) => void;
   error?: string;
   hint?: string;
+  describedBy?: string[];
   autoComplete: string;
   disabled: boolean;
 }) {
-  const describedBy = props.error
-    ? `${props.id}-error`
-    : props.hint
-      ? `${props.id}-hint`
-      : undefined;
+  // All of them, not the first one that applies. The old version swapped the
+  // hint out for the error, so the moment someone got the password rule wrong
+  // was the moment a screen reader stopped reading them the rule.
+  const describedBy =
+    [
+      props.error ? `${props.id}-error` : null,
+      props.hint ? `${props.id}-hint` : null,
+      ...(props.describedBy ?? []),
+    ]
+      .filter(Boolean)
+      .join(" ") || undefined;
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -220,8 +264,10 @@ function Field(props: {
         <p id={`${props.id}-error`} className="text-sm" role="alert">
           {props.error}
         </p>
-      ) : props.hint ? (
-        <p id={`${props.id}-hint`} className="text-xs text-muted">
+      ) : null}
+
+      {props.hint ? (
+        <p id={`${props.id}-hint`} className="text-sm text-muted">
           {props.hint}
         </p>
       ) : null}

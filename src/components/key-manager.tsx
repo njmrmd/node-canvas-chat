@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { ApiCallError, apiFetch } from "@/lib/api-client";
+import { Consequence } from "@/components/consequence";
 import type { StoredKeySummary } from "@/lib/keys";
 import type { ProviderId } from "@/lib/providers/registry";
 
@@ -259,8 +260,16 @@ function AccountSection({ email }: { email: string }) {
         </button>
 
         {confirming ? (
-          <span className="flex items-center gap-3 text-muted">
-            <span>Delete the account and the stored key?</span>
+          /*
+            Full-width so the question gets its own line. Inline at 390px the
+            question squeezed the two controls into the right-hand third and
+            wrapped "Yes, delete" across two lines — a destructive target you
+            have to aim at is a correctness problem, not a cosmetic one.
+          */
+          <span className="flex w-full flex-wrap items-center gap-x-5 gap-y-1">
+            <span className="w-full text-muted">
+              Delete your account and the stored key?
+            </span>
             <button
               type="button"
               onClick={deleteAccount}
@@ -284,7 +293,10 @@ function AccountSection({ email }: { email: string }) {
             onClick={() => setConfirming(true)}
             disabled={busy}
             aria-describedby="delete-account-consequence"
-            className="text-muted underline decoration-hairline underline-offset-4 hover:decoration-current disabled:opacity-50"
+            // Same weight as "Sign out". A muted exit next to a foreground
+            // stay is how roach-motel cancellation starts; the way out of a
+            // product is not the place to save contrast.
+            className="underline decoration-hairline underline-offset-4 hover:decoration-current disabled:opacity-50"
           >
             Delete account
           </button>
@@ -295,15 +307,20 @@ function AccountSection({ email }: { email: string }) {
         Deletion stays visible and spelled out rather than tucked behind a
         settings page: with no password reset yet, this is the only self-service
         way to remove an account and the key stored against it.
+
+        Two lead-weight sentences, nothing muted. Elsewhere a `Consequence`
+        demotes the supporting fact — here there is no supporting fact. Both
+        sentences correct an assumption that costs the reader if they hold it,
+        and the second costs them money at a provider we cannot reach. Neither
+        belongs in the small grey slot this used to sit in.
       */}
-      <p
-        id="delete-account-consequence"
-        className="mt-3 text-pretty text-xs leading-relaxed text-muted"
-      >
-        Deleting removes your account and the stored key immediately, signs out
-        every session, and cannot be undone. Your key stays valid at the
-        provider — revoke it there too if you want it dead.
-      </p>
+      <div id="delete-account-consequence" className="mt-3">
+        <Consequence lead="Deleting removes your account and the stored key immediately, signs out every session, and cannot be undone." />
+        <Consequence
+          className="mt-1"
+          lead="Your key stays valid at the provider — revoke it there too if you want it dead."
+        />
+      </div>
     </section>
   );
 }
