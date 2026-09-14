@@ -1,5 +1,18 @@
 import { assertSameOrigin } from "@/lib/auth/csrf";
 import { requireSessionUser } from "@/lib/auth/session";
+/**
+ * Caps on what one request may carry. `input trust boundaries`: the client
+ * decides the *content* of a conversation, never its size.
+ *
+ * Imported rather than declared, so the canvas can pre-check a branch against
+ * the same numbers this route enforces — one edit changes both sides.
+ */
+import {
+  MAX_MESSAGES,
+  MAX_MESSAGE_CHARS,
+  MAX_SYSTEM_CHARS,
+  MAX_TOTAL_CHARS,
+} from "@/lib/chat-limits";
 import { ApiError, readJsonBody, withRoute } from "@/lib/http";
 import { getDecryptedKey } from "@/lib/keys";
 import { streamChat } from "@/lib/providers/anthropic";
@@ -12,14 +25,6 @@ export const dynamic = "force-dynamic";
 /** Vercel Hobby allows up to 300s for a streaming function. */
 export const maxDuration = 300;
 
-/**
- * Caps on what one request may carry. `input trust boundaries`: the client
- * decides the *content* of a conversation, never its size.
- */
-const MAX_MESSAGES = 100;
-const MAX_MESSAGE_CHARS = 100_000;
-const MAX_TOTAL_CHARS = 400_000;
-const MAX_SYSTEM_CHARS = 10_000;
 
 function parseMessages(value: unknown): ChatMessage[] {
   if (!Array.isArray(value) || value.length === 0) {
