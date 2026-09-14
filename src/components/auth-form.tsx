@@ -16,6 +16,16 @@ import { ApiCallError, apiFetch } from "@/lib/api-client";
 
 type Mode = "sign-up" | "sign-in";
 
+/**
+ * There is no password reset yet. That is a deliberate, recorded gap rather
+ * than an oversight — so it gets said out loud at the moment the password is
+ * chosen, and again on the screen where a locked-out person lands. A stranger
+ * locked out with no warning is a worse impression than a missing feature
+ * honestly labelled.
+ */
+const NO_RECOVERY_HINT =
+  "At least 10 characters. Length beats punctuation. Write it down — there is no password reset yet, so a lost password cannot be recovered.";
+
 const COPY = {
   "sign-up": {
     heading: "Create an account",
@@ -28,6 +38,8 @@ const COPY = {
     footerLink: "Sign in",
     footerHref: "/sign-in",
     autoComplete: "new-password",
+    passwordHint: NO_RECOVERY_HINT,
+    note: null,
   },
   "sign-in": {
     heading: "Sign in",
@@ -39,6 +51,8 @@ const COPY = {
     footerLink: "Create one",
     footerHref: "/sign-up",
     autoComplete: "current-password",
+    passwordHint: undefined,
+    note: "Forgotten your password? There is no reset yet — create a new account to carry on. You will need to reconnect your model key.",
   },
 } as const satisfies Record<Mode, unknown>;
 
@@ -132,11 +146,7 @@ export function AuthForm({ mode }: { mode: Mode }) {
             onChange={setPassword}
             error={fieldErrors.password}
             autoComplete={copy.autoComplete}
-            hint={
-              mode === "sign-up"
-                ? "At least 10 characters. Length beats punctuation."
-                : undefined
-            }
+            hint={copy.passwordHint}
             disabled={busy}
           />
 
@@ -158,6 +168,12 @@ export function AuthForm({ mode }: { mode: Mode }) {
             {copy.footerLink}
           </Link>
         </p>
+
+        {copy.note ? (
+          <p className="mt-3 text-pretty text-xs leading-relaxed text-muted">
+            {copy.note}
+          </p>
+        ) : null}
       </main>
     </div>
   );

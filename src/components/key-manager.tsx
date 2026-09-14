@@ -283,12 +283,27 @@ function AccountSection({ email }: { email: string }) {
             type="button"
             onClick={() => setConfirming(true)}
             disabled={busy}
+            aria-describedby="delete-account-consequence"
             className="text-muted underline decoration-hairline underline-offset-4 hover:decoration-current disabled:opacity-50"
           >
             Delete account
           </button>
         )}
       </div>
+
+      {/*
+        Deletion stays visible and spelled out rather than tucked behind a
+        settings page: with no password reset yet, this is the only self-service
+        way to remove an account and the key stored against it.
+      */}
+      <p
+        id="delete-account-consequence"
+        className="mt-3 text-pretty text-xs leading-relaxed text-muted"
+      >
+        Deleting removes your account and the stored key immediately, signs out
+        every session, and cannot be undone. Your key stays valid at the
+        provider — revoke it there too if you want it dead.
+      </p>
     </section>
   );
 }
