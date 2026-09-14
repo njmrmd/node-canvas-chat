@@ -122,7 +122,9 @@ export default async function Home() {
                   {index + 1}
                 </span>
                 <div>
-                  <h2 className="text-sm font-medium leading-6">{step.title}</h2>
+                  <h2 className="text-sm font-medium leading-6">
+                    {step.title}
+                  </h2>
                   <p className="mt-1 text-pretty text-sm leading-relaxed text-muted">
                     {step.body}
                   </p>
@@ -134,10 +136,7 @@ export default async function Home() {
 
         <p className="mt-8 text-sm text-muted">
           Open source, MIT licensed.{" "}
-          <a
-            className={TEXT_LINK}
-            href={GITHUB_URL}
-          >
+          <a className={TEXT_LINK} href={GITHUB_URL}>
             Source on GitHub
           </a>
         </p>
