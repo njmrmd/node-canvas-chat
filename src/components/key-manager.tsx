@@ -1,18 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ApiCallError, apiFetch } from "@/lib/api-client";
+import { apiFetch } from "@/lib/api-client";
+import { errorSurfaceFor, type ErrorSurface } from "@/lib/error-surface";
 import type { StoredKeySummary } from "@/lib/keys";
 import type { ProviderId } from "@/lib/providers/registry";
 import {
   formatCountdown,
-  rateLimitNoticeFrom,
   useSecondsRemaining,
   type RateLimitNotice,
 } from "@/lib/rate-limit-notice";
 import { AFTER_KEY_CONNECTED, AFTER_KEY_CONNECTED_LABEL } from "@/lib/routes";
-import { RateLimitAlert } from "@/components/rate-limit-alert";
+import {
+  RateLimitAlert,
+  RateLimitCleared,
+} from "@/components/rate-limit-alert";
 import {
   Alert,
   Button,
@@ -130,6 +133,25 @@ function TrustPanel() {
   );
 }
 
+/**
+ * Turns the table's `action` into a real handler.
+ *
+ * `reload` is the literal fix for a stale CSRF token and nothing the user types
+ * will help; `retry` just dismisses the banner so the submit they already have
+ * is the retry. Anything else gets no button — an action that is not the fix is
+ * noise stacked on top of a failure.
+ */
+function alertAction(
+  alert: NonNullable<ErrorSurface["alert"]>,
+  dismiss: () => void,
+) {
+  if (alert.action === "reload") {
+    return { label: "Reload the page", onClick: () => location.reload() };
+  }
+  if (alert.action === "retry") return { label: "Try again", onClick: dismiss };
+  return undefined;
+}
+
 function ProviderRow(props: {
   provider: ProviderView;
   stored?: StoredKeySummary;
@@ -137,7 +159,12 @@ function ProviderRow(props: {
 }) {
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  /**
+   * One surface, resolved by the routing table. Never a banner *and* a field
+   * message for the same submit — the person would read one failure twice and
+   * have to work out that it is one failure.
+   */
+  const [surface, setSurface] = useState<ErrorSurface | null>(null);
   const [rateLimit, setRateLimit] = useState<RateLimitNotice | null>(null);
   /** Set only by a save in this session — drives the forward action. */
   const [justSaved, setJustSaved] = useState(false);
@@ -147,6 +174,7 @@ function ProviderRow(props: {
   const secondsLeft = useSecondsRemaining(rateLimit);
   const waiting = rateLimit !== null && secondsLeft > 0;
   const fieldId = `key-${props.provider.id}`;
+  const keyRef = useRef<HTMLInputElement>(null);
 
   /** The form is hidden once a key is connected, unless the user asks to replace it. */
   const showForm = !props.stored || replacing;
@@ -155,8 +183,9 @@ function ProviderRow(props: {
     event.preventDefault();
     if (busy || waiting) return;
 
+    // Clear at t=0, so a second identical failure still looks like it happened.
     setBusy(true);
-    setError(null);
+    setSurface(null);
     setRateLimit(null);
 
     try {
@@ -171,16 +200,25 @@ function ProviderRow(props: {
       setReplacing(false);
       props.onChange(key);
     } catch (caught) {
-      const limit = rateLimitNoticeFrom(caught);
-      if (limit) {
-        setRateLimit(limit);
-      } else {
-        setError(
-          caught instanceof ApiCallError
-            ? (caught.fields.apiKey ?? caught.message)
-            : "Something went wrong. Please try again.",
-        );
+      const next = errorSurfaceFor(caught, {
+        providerLabel: props.provider.label,
+        keyField: "apiKey",
+      });
+
+      setSurface(next);
+      if (next.rateLimit) {
+        setRateLimit({
+          message: next.alert?.message ?? "",
+          retryAfterSeconds: next.rateLimit.retryAfterSeconds,
+        });
       }
+
+      /*
+       * The pasted value is deliberately kept on a rejection. A key is shown
+       * once by the provider's console; clearing the field would send someone
+       * back to generate a new one because they mistyped nothing at all.
+       */
+      if (next.focus === "first-invalid") keyRef.current?.focus();
     } finally {
       setBusy(false);
     }
@@ -188,7 +226,7 @@ function ProviderRow(props: {
 
   async function disconnect() {
     setBusy(true);
-    setError(null);
+    setSurface(null);
 
     try {
       await apiFetch(`/api/keys/${props.provider.id}`, { method: "DELETE" });
@@ -196,11 +234,7 @@ function ProviderRow(props: {
       setJustSaved(false);
       setConfirmingDisconnect(false);
     } catch (caught) {
-      setError(
-        caught instanceof ApiCallError
-          ? caught.message
-          : "Could not remove that key.",
-      );
+      setSurface(errorSurfaceFor(caught, { providerLabel: props.provider.label }));
     } finally {
       setBusy(false);
     }
@@ -254,9 +288,13 @@ function ProviderRow(props: {
             </Button>
           </div>
 
-          {error ? (
-            <Alert tone="error" title="That did not work">
-              {error}
+          {surface?.alert ? (
+            <Alert
+              tone={surface.alert.tone}
+              title={surface.alert.title}
+              action={alertAction(surface.alert, () => setSurface(null))}
+            >
+              {surface.alert.message}
             </Alert>
           ) : null}
 
@@ -308,11 +346,17 @@ function ProviderRow(props: {
 
       {showForm ? (
         <form onSubmit={save} className="mt-3 flex flex-col gap-4">
-          {rateLimit ? (
+          {waiting ? (
             <RateLimitAlert secondsLeft={secondsLeft} />
-          ) : error ? (
-            <Alert tone="error" title="That key was not accepted">
-              {error}
+          ) : rateLimit ? (
+            <RateLimitCleared />
+          ) : surface?.alert ? (
+            <Alert
+              tone={surface.alert.tone}
+              title={surface.alert.title}
+              action={alertAction(surface.alert, () => setSurface(null))}
+            >
+              {surface.alert.message}
             </Alert>
           ) : null}
 
@@ -329,7 +373,8 @@ function ProviderRow(props: {
             spellCheck={false}
             mono
             disabled={busy}
-            error={error ?? undefined}
+            ref={keyRef}
+            error={surface?.fieldErrors.apiKey}
           />
 
           <div className="flex flex-wrap items-center gap-3">
@@ -357,7 +402,7 @@ function ProviderRow(props: {
                 onClick={() => {
                   setReplacing(false);
                   setValue("");
-                  setError(null);
+                  setSurface(null);
                 }}
                 disabled={busy}
               >
