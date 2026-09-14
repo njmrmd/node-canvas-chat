@@ -1,0 +1,55 @@
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+
+# agent/editor machine-local config. Listed here rather than relying on a
+# contributor's global gitignore, so this public repo stays clean on any machine.
+.claude/settings.local.json
+.idea/
+.vscode/
+
+# secrets — nothing matching these may ever be committed.
+# The negation for .env.example is deliberate and is the ONLY exception:
+# it holds variable names and placeholder values, never real values.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p8
+*.p12
+*.pfx
+secrets.json
+.secrets/
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts

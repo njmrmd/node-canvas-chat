@@ -1,0 +1,36 @@
+@import "tailwindcss";
+
+/*
+ * Placeholder tokens only. The real palette, type scale and spacing system are
+ * owned by Design Engineer (TES design system work) — expect this block to be
+ * replaced wholesale rather than extended.
+ */
+:root {
+  --background: #ffffff;
+  --foreground: #18181b;
+  --muted: #71717a;
+  --hairline: #e4e4e7;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #09090b;
+    --foreground: #fafafa;
+    --muted: #a1a1aa;
+    --hairline: #27272a;
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-hairline: var(--hairline);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+}
