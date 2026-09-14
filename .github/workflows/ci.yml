@@ -34,5 +34,11 @@ jobs:
       - name: Lint
         run: pnpm lint
 
+      # The vault, the password verifier and the CSRF check are the code this
+      # product is most trusted on. They need no database, so they gate every
+      # push.
+      - name: Test
+        run: pnpm test
+
       - name: Build
         run: pnpm build
