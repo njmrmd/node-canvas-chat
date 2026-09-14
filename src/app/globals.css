@@ -1,15 +1,92 @@
 @import "tailwindcss";
 
 /*
- * Placeholder tokens only. The real palette, type scale and spacing system are
- * owned by Design Engineer (TES design system work) — expect this block to be
- * replaced wholesale rather than extended.
+ * Tokens for the pre-canvas surface (sign-up, sign-in, key connection).
+ *
+ * Every value below that sits under a component border, an error, or a success
+ * state was picked against a contrast target rather than by eye — the ratios
+ * are recorded next to each one so the next person can change a colour without
+ * silently failing an audit. Ratios are computed against `--background` for the
+ * scheme they appear in.
+ *
+ * - Text on a surface: >= 4.5:1 (WCAG 1.4.3 AA).
+ * - Control borders and state indicators: >= 3:1 (WCAG 1.4.11 non-text).
+ * - `--hairline` and the three `--*-line` tokens are exempt: they are
+ *   decorative rules, never the boundary that identifies a region. On a message
+ *   the 3px tonal rail is that boundary, and the rail is what has to pass.
+ *   `--border-input` carries meaning on a control, so it has to pass too.
+ *
+ * Every ratio below was recomputed, not inherited. `pnpm check:contrast` prints
+ * the whole table and exits non-zero if a pair regresses.
+ *
+ * The canvas has its own visual direction and does not inherit this block.
  */
 :root {
   --background: #ffffff;
   --foreground: #18181b;
   --muted: #71717a;
+
+  /* Decorative separators only. Not a control boundary — see note above. */
   --hairline: #e4e4e7;
+
+  /*
+   * A raised panel. Carries no meaning on its own — it exists to lift the
+   * trust paragraph on the key screen off the page, since that sentence is the
+   * most persuasive thing we say and was previously the quietest.
+   */
+  --surface-subtle: #fafafa;
+
+  /* Control boundary. 3.20:1 on --background. */
+  --border-input: #8f8f99;
+
+  /*
+   * A message entering. Exit is deliberately instant: an error that fades out
+   * while the user is still reacting to it is a lie about state.
+   */
+  --dur-base: 180ms;
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+
+  /* Error. Text 6.57:1, border 4.83:1. Text on its own fill 6.05:1. */
+  --danger: #b42318;
+  --danger-border: #d92d20;
+  --danger-surface: #fef3f2;
+
+  /*
+   * Wait, not failure. A rate limit and a cold database are both "come back in
+   * a moment", and styling them as errors tells the user they did something
+   * wrong when they did not. Text 5.43:1, border 3.49:1. Text on own fill 5.20:1.
+   */
+  --warning: #b54708;
+  --warning-border: #dc6803;
+  --warning-surface: #fffaeb;
+
+  /* Success. Text 5.69:1, border 4.01:1. Text on its own fill 5.40:1. */
+  --success: #067647;
+  --success-border: #099250;
+  --success-surface: #ecfdf3;
+
+  /*
+   * The 1px hairline around a message, in the tone but not of it.
+   *
+   * Deliberately below 3:1 against the fill it encloses, and that is not a bug
+   * to fix: the 3px rail is the boundary that identifies the region and the
+   * rail passes comfortably. Darkening these to "pass" is exactly how a message
+   * starts looking like a control again.
+   */
+  --danger-line: #fda29b;
+  --warning-line: #fec84b;
+  --success-line: #6ce9a6;
+
+  /*
+   * Disabled controls. Exempt from the contrast minimums by 1.4.3/1.4.11, and
+   * deliberately so: "you cannot press this" has to be legible as a state, not
+   * read as a slightly faded live button.
+   */
+  --control-disabled: #f4f4f5;
+  --control-disabled-foreground: #a1a1aa;
+
+  /* One measure for the whole pre-canvas flow. Set here, used once, in Shell. */
+  --measure: 28rem;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -17,7 +94,36 @@
     --background: #09090b;
     --foreground: #fafafa;
     --muted: #a1a1aa;
+
     --hairline: #27272a;
+
+    --surface-subtle: #131316;
+
+    /* 3.35:1 on --background. */
+    --border-input: #63636d;
+
+    /* Text 10.25:1, border 5.30:1. */
+    --danger: #fda29b;
+    --danger-border: #f04438;
+    --danger-surface: #2a1210;
+
+    /* Text 12.86:1, border 8.48:1. Text on own fill 10.45:1. */
+    --warning: #fec84b;
+    --warning-border: #f79009;
+    --warning-surface: #2a1f08;
+
+    /* Text 12.29:1, border 7.21:1. Text on own fill 9.54:1. */
+    --success: #75e0a7;
+    --success-border: #17b26a;
+    --success-surface: #0a2a1c;
+
+    /* Decorative hairlines again — see the note in the light block. */
+    --danger-line: #7f2724;
+    --warning-line: #7c5a09;
+    --success-line: #0a5138;
+
+    --control-disabled: #1c1c1f;
+    --control-disabled-foreground: #6b6b74;
   }
 }
 
@@ -26,6 +132,31 @@
   --color-foreground: var(--foreground);
   --color-muted: var(--muted);
   --color-hairline: var(--hairline);
+  --color-surface-subtle: var(--surface-subtle);
+  --color-border-input: var(--border-input);
+  --color-danger: var(--danger);
+  --color-danger-border: var(--danger-border);
+  --color-danger-surface: var(--danger-surface);
+  --color-danger-line: var(--danger-line);
+  --color-warning: var(--warning);
+  --color-warning-border: var(--warning-border);
+  --color-warning-surface: var(--warning-surface);
+  --color-warning-line: var(--warning-line);
+  --color-success: var(--success);
+  --color-success-border: var(--success-border);
+  --color-success-surface: var(--success-surface);
+  --color-success-line: var(--success-line);
+  --color-control-disabled: var(--control-disabled);
+  --color-control-disabled-foreground: var(--control-disabled-foreground);
+  /*
+   * A message is never shaped like a control. Radius is one of the three
+   * independent signals that says so — the others are the tonal fill and the
+   * 3px rail. Controls take `rounded-sm` (6px), messages take `rounded-md`
+   * (10px), and the gap between the two is what survives a greyscale
+   * screenshot of the sign-up error state.
+   */
+  --radius-sm: 6px;
+  --radius-md: 10px;
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -33,4 +164,40 @@
 body {
   background: var(--background);
   color: var(--foreground);
+}
+
+/*
+ * A message arriving.
+ *
+ * Opacity and a 4px lift only — deliberately no height or max-height. Animating
+ * layout is what makes a form feel like it is collapsing under the user, and
+ * the auth shell is top-anchored precisely so a banner pushes the fields down
+ * without moving the heading the person is reading.
+ *
+ * There is no exit animation on purpose. An error that fades out while the user
+ * is still reacting to it is a lie about state.
+ *
+ * Applied through Tailwind's `motion-safe:` variant, so `prefers-reduced-motion:
+ * reduce` removes the transition and changes nothing else — same DOM, same
+ * final position, same colours.
+ */
+@keyframes alert-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

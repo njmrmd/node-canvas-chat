@@ -1,17 +1,48 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
-import { ApiCallError, apiFetch } from "@/lib/api-client";
+import { apiFetch } from "@/lib/api-client";
+import { errorSurfaceFor, type ErrorSurface } from "@/lib/error-surface";
+import {
+  EMAIL_MAX_LENGTH,
+  PASSWORD_MAX_LENGTH,
+  PASSWORD_MIN_LENGTH,
+  checkCredentials,
+} from "@/lib/auth/credentials";
+import { DEFAULT_SIGNED_IN_PATH, safeNextPath } from "@/lib/auth/next-path";
+import {
+  formatCountdown,
+  useSecondsRemaining,
+  type RateLimitNotice,
+} from "@/lib/rate-limit-notice";
+import { RateLimitAlert, RateLimitCleared } from "@/components/rate-limit-alert";
+import {
+  Alert,
+  Button,
+  Field,
+  PageHeading,
+  Shell,
+  Spinner,
+  TextLink,
+} from "@/components/ui";
 
 /**
  * Sign-up and sign-in. One component, because the two forms differ only in
  * their endpoint and their copy — and keeping them together means the error
  * handling cannot drift between them.
  *
+ * The form validates before it submits. That is not politeness: `/api/auth/*`
+ * is rate limited per IP, so a mistyped password used to cost a stranger one
+ * of the few sign-up attempts their address gets. The rules come from
+ * `@/lib/auth/credentials`, which the API imports too, so the browser can
+ * never refuse something the server would have taken, or vice versa. The
+ * server still decides — this only stops the pointless round trip.
+ *
  * Platform Engineer owns what this does. Design Engineer owns how it looks and
- * reads; the styling here is a working baseline, not the visual direction.
+ * reads; every visual decision here comes from the shared primitives in
+ * `ui.tsx` and the tokens in `globals.css`, so the two screens cannot drift
+ * apart from each other or from the key screen.
  */
 
 type Mode = "sign-up" | "sign-in";
@@ -42,23 +73,72 @@ const COPY = {
   },
 } as const satisfies Record<Mode, unknown>;
 
-export function AuthForm({ mode }: { mode: Mode }) {
+export function AuthForm({ mode, next }: { mode: Mode; next?: string }) {
   const copy = COPY[mode];
   const router = useRouter();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
+  /** The banner, already resolved to tone + copy by the routing table. */
+  const [formAlert, setFormAlert] = useState<ErrorSurface["alert"]>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [fieldErrorLink, setFieldErrorLink] =
+    useState<ErrorSurface["fieldErrorLink"]>(undefined);
+  const [rateLimit, setRateLimit] = useState<RateLimitNotice | null>(null);
+
+  const emailRef = useRef<HTMLInputElement>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
+
+  // A 429 is a wait with a known end, so the submit stays disabled until the
+  // clock runs out rather than inviting another attempt that cannot succeed.
+  const secondsLeft = useSecondsRemaining(rateLimit);
+  const waiting = rateLimit !== null && secondsLeft > 0;
+
+  // Re-checked here even though the page already checked it: this prop is one
+  // `?next=` edit away from being attacker-controlled, and it ends up in a
+  // client-side navigation.
+  const destination = safeNextPath(next) ?? DEFAULT_SIGNED_IN_PATH;
+  const footerHref = next
+    ? `${copy.footerHref}?next=${encodeURIComponent(destination)}`
+    : copy.footerHref;
+
+  /** Clears a field's error as soon as the user starts fixing it. */
+  function clearFieldError(field: string) {
+    setFieldErrors((current) => {
+      if (!(field in current)) return current;
+      const remaining = { ...current };
+      delete remaining[field];
+      return remaining;
+    });
+  }
 
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault();
-    if (busy) return;
+    if (busy || waiting) return;
+
+    /*
+     * Everything clears at t=0, before anything is sent.
+     *
+     * Not cosmetic: re-submitting an unchanged form would otherwise leave an
+     * identical banner on screen and the person has no evidence the button did
+     * anything at all. Feedback has to be caused by the action.
+     */
+    setFormAlert(null);
+    setFieldErrors({});
+    setFieldErrorLink(undefined);
+    setRateLimit(null);
+
+    const local = checkCredentials(mode, { email, password });
+    if (Object.keys(local).length > 0) {
+      setFieldErrors(local);
+      // Put the cursor on the first thing that is wrong, so fixing it is one
+      // keystroke away rather than a hunt down the form.
+      (local.email ? emailRef : passwordRef).current?.focus();
+      return;
+    }
 
     setBusy(true);
-    setFormError(null);
-    setFieldErrors({});
 
     try {
       await apiFetch(copy.endpoint, {
@@ -70,145 +150,178 @@ export function AuthForm({ mode }: { mode: Mode }) {
       // any server-component payload cached from the signed-out state would
       // otherwise render first.
       router.refresh();
-      router.push("/keys");
+      router.push(destination);
     } catch (error) {
-      if (error instanceof ApiCallError) {
-        setFieldErrors(error.fields);
-        // A field-level error is shown next to its input; only surface a
-        // banner when there is something the fields do not already say.
-        setFormError(
-          Object.keys(error.fields).length > 0 ? null : error.message,
-        );
-      } else {
-        setFormError("Something went wrong. Please try again.");
+      /*
+       * One table decides all of this — tone, banner-or-field, copy, focus. The
+       * form does not interpret error codes; it renders what it is handed.
+       */
+      const surface = errorSurfaceFor(error);
+
+      setFormAlert(surface.alert);
+      setFieldErrors(surface.fieldErrors);
+      setFieldErrorLink(surface.fieldErrorLink);
+      if (surface.rateLimit) {
+        setRateLimit({
+          message: surface.alert?.message ?? "",
+          retryAfterSeconds: surface.rateLimit.retryAfterSeconds,
+        });
       }
+      if (surface.clearPassword) setPassword("");
       setBusy(false);
+
+      /*
+       * Focus moves for a field error and never for a banner. `role="alert"`
+       * already announces the banner, and pulling focus off the button the
+       * person just pressed loses their place on the form.
+       */
+      if (surface.focus === "password") {
+        passwordRef.current?.focus();
+      } else if (surface.focus === "first-invalid") {
+        (surface.fieldErrors.email ? emailRef : passwordRef).current?.focus();
+      }
     }
   }
 
   return (
-    <div className="flex min-h-dvh flex-col items-center justify-center px-6 py-16">
-      <main className="w-full max-w-sm">
-        <Link
-          href="/"
-          className="font-mono text-xs uppercase tracking-[0.18em] text-muted"
-        >
-          Node Canvas Chat
-        </Link>
+    <Shell>
+      <PageHeading title={copy.heading}>{copy.subheading}</PageHeading>
 
-        <h1 className="mt-5 text-2xl font-semibold tracking-tight">
-          {copy.heading}
-        </h1>
-        <p className="mt-2 text-pretty text-sm leading-relaxed text-muted">
-          {copy.subheading}
-        </p>
-
-        <form onSubmit={onSubmit} className="mt-8 flex flex-col gap-4" noValidate>
-          {formError ? (
-            <p
-              role="alert"
-              className="rounded-md border border-hairline px-3 py-2 text-sm"
-            >
-              {formError}
-            </p>
-          ) : null}
-
-          <Field
-            id="email"
-            label="Email"
-            type="email"
-            value={email}
-            onChange={setEmail}
-            error={fieldErrors.email}
-            autoComplete="email"
-            disabled={busy}
-          />
-
-          <Field
-            id="password"
-            label="Password"
-            type="password"
-            value={password}
-            onChange={setPassword}
-            error={fieldErrors.password}
-            autoComplete={copy.autoComplete}
-            hint={
-              mode === "sign-up"
-                ? "At least 10 characters. Length beats punctuation."
-                : undefined
+      {/*
+       * `noValidate` stays on, and the checks above replace it. The browser
+       * knows the answer, but it delivers it in a transient bubble that is
+       * unstyleable, disappears on the next keystroke, and reads differently
+       * in every browser. The messages render in the same slot as the
+       * server's instead — one error surface, which Design Engineer owns.
+       */}
+      <form onSubmit={onSubmit} className="mt-8 flex flex-col gap-4" noValidate>
+        {/*
+          * At most one banner, always above the first field. The shell is
+          * top-anchored, so this pushes the fields down and never moves the
+          * heading the person is reading — and no space is reserved for a
+          * banner that is usually absent.
+          */}
+        {waiting ? (
+          <RateLimitAlert secondsLeft={secondsLeft} id="rate-limit-alert" />
+        ) : rateLimit ? (
+          // The clock ran out: banner gone, button live again, said politely.
+          <RateLimitCleared />
+        ) : formAlert ? (
+          <Alert
+            tone={formAlert.tone}
+            title={formAlert.title}
+            action={
+              formAlert.action === "reload"
+                ? { label: "Reload the page", onClick: () => location.reload() }
+                : formAlert.action === "retry"
+                  ? {
+                      label: "Try again",
+                      onClick: () => setFormAlert(null),
+                    }
+                  : undefined
             }
-            disabled={busy}
-          />
-
-          <button
-            type="submit"
-            disabled={busy}
-            className="mt-2 rounded-md bg-foreground px-4 py-2.5 text-sm font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50"
           >
-            {busy ? copy.busy : copy.submit}
-          </button>
-        </form>
+            {formAlert.message}
+          </Alert>
+        ) : null}
 
-        <p className="mt-6 text-sm text-muted">
-          {copy.footer}{" "}
-          <Link
-            href={copy.footerHref}
-            className="underline decoration-hairline underline-offset-4 hover:decoration-current"
-          >
-            {copy.footerLink}
-          </Link>
-        </p>
-      </main>
-    </div>
-  );
-}
+        <Field
+          ref={emailRef}
+          id="email"
+          label="Email"
+          type="email"
+          value={email}
+          onChange={(value) => {
+            setEmail(value);
+            clearFieldError("email");
+          }}
+          error={
+            fieldErrors.email ? (
+              <>
+                {fieldErrors.email}
+                {fieldErrorLink?.field === "email" ? (
+                  <>
+                    {" "}
+                    <TextLink href={fieldErrorLink.href}>
+                      {fieldErrorLink.label}
+                    </TextLink>
+                    .
+                  </>
+                ) : null}
+              </>
+            ) : undefined
+          }
+          autoComplete="email"
+          autoFocus
+          required
+          maxLength={EMAIL_MAX_LENGTH}
+          disabled={busy}
+        />
 
-function Field(props: {
-  id: string;
-  label: string;
-  type: string;
-  value: string;
-  onChange: (value: string) => void;
-  error?: string;
-  hint?: string;
-  autoComplete: string;
-  disabled: boolean;
-}) {
-  const describedBy = props.error
-    ? `${props.id}-error`
-    : props.hint
-      ? `${props.id}-hint`
-      : undefined;
+        <Field
+          ref={passwordRef}
+          id="password"
+          label="Password"
+          type="password"
+          value={password}
+          onChange={(value) => {
+            setPassword(value);
+            clearFieldError("password");
+          }}
+          error={fieldErrors.password}
+          autoComplete={copy.autoComplete}
+          required
+          minLength={mode === "sign-up" ? PASSWORD_MIN_LENGTH : undefined}
+          maxLength={PASSWORD_MAX_LENGTH}
+          hint={
+            mode === "sign-up"
+              ? `At least ${PASSWORD_MIN_LENGTH} characters. Length beats punctuation.`
+              : undefined
+          }
+          /*
+           * Said at the moment the password is chosen, not in a footer.
+           * There is no reset email yet, and a stranger who discovers that
+           * after losing the password has a worse impression of us than one
+           * who was told plainly before they committed.
+           */
+          note={
+            mode === "sign-up"
+              ? "There is no password reset yet. If you lose this password, you lose the account and the key stored with it — save it in your password manager now."
+              : undefined
+          }
+          disabled={busy}
+        />
 
-  return (
-    <div className="flex flex-col gap-1.5">
-      <label htmlFor={props.id} className="text-sm font-medium">
-        {props.label}
-      </label>
+        <Button
+          type="submit"
+          disabled={busy || waiting}
+          full
+          className="mt-2"
+          aria-describedby={waiting ? "rate-limit-alert" : undefined}
+        >
+          {busy ? (
+            <>
+              <Spinner />
+              {copy.busy}
+            </>
+          ) : waiting ? (
+            <>
+              <span aria-hidden="true" className="tabular-nums">
+                Try again in {formatCountdown(secondsLeft)}
+              </span>
+              <span className="sr-only">
+                Locked until the rate limit resets
+              </span>
+            </>
+          ) : (
+            copy.submit
+          )}
+        </Button>
+      </form>
 
-      <input
-        id={props.id}
-        name={props.id}
-        type={props.type}
-        value={props.value}
-        onChange={(event) => props.onChange(event.target.value)}
-        autoComplete={props.autoComplete}
-        required
-        disabled={props.disabled}
-        aria-invalid={props.error ? true : undefined}
-        aria-describedby={describedBy}
-        className="rounded-md border border-hairline bg-transparent px-3 py-2 text-base outline-none focus-visible:ring-2 focus-visible:ring-foreground/30 disabled:opacity-50"
-      />
-
-      {props.error ? (
-        <p id={`${props.id}-error`} className="text-sm" role="alert">
-          {props.error}
-        </p>
-      ) : props.hint ? (
-        <p id={`${props.id}-hint`} className="text-xs text-muted">
-          {props.hint}
-        </p>
-      ) : null}
-    </div>
+      <p className="mt-4 text-sm text-muted">
+        {copy.footer} <TextLink href={footerHref}>{copy.footerLink}</TextLink>
+      </p>
+    </Shell>
   );
 }
