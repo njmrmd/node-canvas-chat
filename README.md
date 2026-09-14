@@ -121,18 +121,33 @@ enough.
 
    ```bash
    curl https://<your-deployment>/api/health
-   # {"ok":true,"service":"node-canvas-chat","environment":"production",...}
+   # {"ok":true,"service":"node-canvas-chat","environment":"production",
+   #  "commit":"127d0d4","branch":"main"}
    ```
 
    `/api/health` runs as a server function, so a 200 from it proves more than
-   the page loading does.
+   the page loading does. `commit` and `branch` name the build that answered,
+   which is what a QA sign-off cites.
 
-To redeploy from the command line instead:
+To deploy from the command line instead:
 
 ```bash
-pnpm dlx vercel@latest link      # once, per checkout
-pnpm dlx vercel@latest --prod
+pnpm dlx vercel@latest link   # once, per checkout
+scripts/deploy.sh             # preview
+scripts/deploy.sh --prod      # production
 ```
+
+Use the script rather than `vercel deploy` directly. It passes the commit and
+branch of the checkout it runs in, then curls `/api/health` and fails if the
+deployment does not report them back. Deploying with bare `vercel deploy` works,
+but only reports provenance when the CLI recognises the checkout's git remote as
+GitHub, GitLab or Bitbucket — from a clone with a local-path origin, a worktree,
+or no remote, `VERCEL_GIT_COMMIT_SHA` arrives as an empty string and the build
+becomes unidentifiable. The script does not depend on that detection.
+
+A deploy from a checkout with uncommitted changes is not the commit it names, so
+the script warns and the deployment reports `"dirty": true` alongside the commit
+it was based on.
 
 ### Environment variables on Vercel
 

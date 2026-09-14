@@ -1,19 +1,23 @@
 import { NextResponse } from "next/server";
+import { buildInfo } from "@/lib/build-info";
 
 export const dynamic = "force-dynamic";
 
 /**
  * Deploy probe. Proves a server function actually ran on this deployment, which
- * a static page cannot. Returns build identity only — never environment values,
- * connection strings, or anything user-scoped.
+ * a static page cannot, and names the commit that ran — this is the only place
+ * the app states its own provenance, so a QA sign-off can say which build it
+ * applies to.
+ *
+ * Returns build identity only — never environment values, connection strings,
+ * or anything user-scoped. See `@/lib/build-info` for where the fields come
+ * from and why they are never blank.
  */
 export function GET() {
-  return NextResponse.json({
-    ok: true,
-    service: "node-canvas-chat",
-    // Vercel sets these; they are empty on a local `next dev`.
-    environment: process.env.VERCEL_TARGET_ENV ?? process.env.VERCEL_ENV ?? "local",
-    commit: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? "local",
-    branch: process.env.VERCEL_GIT_COMMIT_REF ?? "local",
-  });
+  return NextResponse.json(
+    { ok: true, service: "node-canvas-chat", ...buildInfo() },
+    // A cached health response would report the commit of whichever deployment
+    // filled the cache, which is worse than no answer at all.
+    { headers: { "Cache-Control": "no-store" } },
+  );
 }
