@@ -1,7 +1,9 @@
-import Link from "next/link";
 import { getSessionUser } from "@/lib/auth/session";
 import { isDatabaseConfigured } from "@/lib/db";
 import { PROVIDERS } from "@/lib/providers/registry";
+import { ConversationGraph } from "@/components/conversation-graph";
+import { ButtonLink, PageHeading, Shell, TextLink } from "@/components/ui";
+import { KEYS, SIGN_IN, SIGN_UP } from "@/lib/routes";
 
 /**
  * The front door. This is the first thing a stranger sees, and the only page
@@ -12,37 +14,28 @@ import { PROVIDERS } from "@/lib/providers/registry";
  * Deliberately not here: build metadata. `/api/health` already reports the
  * environment, branch and commit, and that is the right home for it.
  *
- * The styling uses the tokens in `globals.css` and mirrors the control shapes
- * in `components/ui.tsx` (44px targets, the same focus ring) so the first two
- * steps of the journey read as one product. It deliberately does not import
- * `ui.tsx` yet: that shell is a form column at `--measure`, and a hero is not.
- * Folding this page into those primitives is a follow-up once the pre-canvas
- * design pass lands. Design Engineer owns how this reads and looks.
+ * Two frames, because two different people arrive here. A stranger gets the
+ * hero: centred, one screen, `max-w-xl` — a hero and a form column are
+ * different objects, so this one is not at `--measure`. Someone already signed
+ * in gets `Shell`, the same frame as `/sign-in` and `/keys`, because they are
+ * inside the product and should not be sold to a second time.
+ *
+ * Every control comes from `components/ui.tsx`. Local copies of the button and
+ * link shapes lived here once and had already drifted from the originals.
  */
 
 export const dynamic = "force-dynamic";
 
 const GITHUB_URL = "https://github.com/njmrmd/node-canvas-chat";
 
-const FOCUS_RING =
-  "outline-none focus-visible:ring-2 focus-visible:ring-foreground focus-visible:ring-offset-2 focus-visible:ring-offset-background";
-
-/**
- * `min-h-11` keeps both actions at or above the 44px tap target — the whole
- * point of this page is that a thumb on a phone can reach sign-up.
- */
-const CONTROL = `inline-flex min-h-11 items-center justify-center rounded-md px-4 text-sm font-medium transition-colors ${FOCUS_RING}`;
-
-const TEXT_LINK = `rounded-xs underline decoration-hairline underline-offset-4 transition-colors hover:decoration-current ${FOCUS_RING}`;
-
 const steps = [
   {
     title: "Create an account",
-    body: "An email and a password. No card, no team setup, no onboarding wizard.",
+    body: "Email and password. No card, no team setup.",
   },
   {
     title: `Connect an ${PROVIDERS.anthropic.label} key`,
-    body: "Paste your own API key. It is encrypted before it is stored, never returned to the browser, and deleting your account deletes it with you.",
+    body: "Paste your own API key. It is encrypted before it is stored and never returned to the browser.",
   },
   {
     title: "Branch the conversation",
@@ -56,9 +49,12 @@ export default async function Home() {
   // it is not — the front door must never 500.
   const user = isDatabaseConfigured() ? await getSessionUser() : null;
 
+  if (user) return <SignedIn />;
+
   return (
     <div className="flex min-h-dvh flex-col px-6 py-16 sm:justify-center">
       <main className="mx-auto w-full max-w-xl">
+        {/* A `<p>`, not a link: here it would only point at itself. */}
         <p className="font-mono text-xs uppercase tracking-[0.18em] text-muted">
           Node Canvas Chat
         </p>
@@ -67,98 +63,98 @@ export default async function Home() {
           A conversation is a graph, not a list.
         </h1>
 
-        <p className="mt-4 text-pretty leading-relaxed text-muted">
+        {/*
+         * The lede gets its own type level — 18px in `--foreground`, against
+         * 14px muted everywhere below it. It is the sentence that installs the
+         * mental model, so it must not read like the licence line.
+         */}
+        <p className="mt-4 text-pretty text-lg leading-relaxed text-foreground">
           Every exchange is a card on a canvas. Branch from any card to take an
           idea somewhere else, and keep the version you started with — instead
           of scrolling back through a thread to find where it went wrong.
         </p>
 
+        {/* The claim above is spatial, so it gets shown as well as stated, and
+            it is shown *before* the ask — a stranger should understand what
+            they are signing up for while they are still reading the sentence
+            that promised it. Decorative and aria-hidden; the lede is its text
+            equivalent. */}
+        <ConversationGraph className="mt-8 w-full max-w-[28rem]" />
+
         <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
-          {user ? (
-            <PrimaryLink href="/keys">Continue</PrimaryLink>
-          ) : (
-            <>
-              <PrimaryLink href="/sign-up">Create an account</PrimaryLink>
-              <Link
-                href="/sign-in"
-                className={`${CONTROL} border border-transparent text-muted hover:text-foreground`}
-              >
-                I already have an account
-              </Link>
-            </>
-          )}
+          <ButtonLink href={SIGN_UP}>Create an account</ButtonLink>
+          <ButtonLink href={SIGN_IN} variant="secondary">
+            Sign in
+          </ButtonLink>
         </div>
 
         <p className="mt-4 text-sm leading-relaxed text-muted">
-          {user ? (
-            <>You are signed in. Pick up where you left off.</>
-          ) : (
-            <>
-              You bring your own model access: you will need an{" "}
-              <a
-                href={PROVIDERS.anthropic.consoleUrl}
-                className={TEXT_LINK}
-                target="_blank"
-                rel="noreferrer"
-              >
-                {PROVIDERS.anthropic.label} API key
-              </a>
-              , which takes about a minute to create. You connect it straight
-              after signing up, and we never see your provider bill.
-            </>
-          )}
+          You will need your own{" "}
+          <TextLink href={PROVIDERS.anthropic.consoleUrl} external>
+            {PROVIDERS.anthropic.label} API key
+          </TextLink>
+          . It takes about a minute to create, and we never see your provider
+          bill.
         </p>
 
-        {/* Signed out only: "1. Create an account" is stale advice for someone
-            who already has one. */}
-        {user ? null : (
-          <ol className="mt-12 divide-y divide-hairline border-y border-hairline">
-            {steps.map((step, index) => (
-              <li key={step.title} className="flex gap-4 py-4">
-                <span
-                  aria-hidden="true"
-                  className="font-mono text-xs leading-6 text-muted"
-                >
-                  {index + 1}
-                </span>
-                <div>
-                  <h2 className="text-sm font-medium leading-6">
-                    {step.title}
-                  </h2>
-                  <p className="mt-1 text-pretty text-sm leading-relaxed text-muted">
-                    {step.body}
-                  </p>
-                </div>
-              </li>
-            ))}
-          </ol>
-        )}
+        {/*
+         * The group label is the only `<h2>` on the page, so the outline reads
+         * h1 → h2 rather than four siblings. The `<ol>` carries the order; the
+         * numerals are decoration and stay hidden from assistive tech.
+         */}
+        <h2 className="mt-12 font-mono text-xs uppercase tracking-[0.18em] text-muted">
+          How it works
+        </h2>
+
+        <ol className="mt-4 divide-y divide-hairline border-y border-hairline">
+          {steps.map((step, index) => (
+            <li key={step.title} className="flex gap-4 py-4">
+              <span
+                aria-hidden="true"
+                className="font-mono text-xs leading-6 text-muted"
+              >
+                {index + 1}
+              </span>
+              <div>
+                <p className="text-sm font-medium leading-6">{step.title}</p>
+                <p className="mt-1 text-pretty text-sm leading-relaxed text-muted">
+                  {step.body}
+                </p>
+              </div>
+            </li>
+          ))}
+        </ol>
 
         <p className="mt-8 text-sm text-muted">
           Open source, MIT licensed.{" "}
-          <a className={TEXT_LINK} href={GITHUB_URL}>
+          <TextLink href={GITHUB_URL} external>
             Source on GitHub
-          </a>
+          </TextLink>
         </p>
       </main>
     </div>
   );
 }
 
-/** The primary action shape shared with the auth screens' submit button. */
-function PrimaryLink({
-  href,
-  children,
-}: {
-  href: string;
-  children: React.ReactNode;
-}) {
+/**
+ * The signed-in front door.
+ *
+ * Not the hero. Someone returning has already bought the pitch, and showing it
+ * to them again left roughly 330px of content floating in a vertically-centred
+ * phone screen. This is the product's own frame, and it says plainly what is
+ * and is not live rather than implying the button opens a canvas.
+ */
+function SignedIn() {
   return (
-    <Link
-      href={href}
-      className={`${CONTROL} border border-foreground bg-foreground text-background hover:opacity-90`}
-    >
-      {children}
-    </Link>
+    <Shell>
+      <PageHeading title="Welcome back.">
+        Your model access lives on the key screen. The canvas is not live yet —
+        when it is, it will open from here.
+      </PageHeading>
+
+      <div className="mt-8">
+        <ButtonLink href={KEYS}>Manage model access</ButtonLink>
+      </div>
+    </Shell>
   );
 }

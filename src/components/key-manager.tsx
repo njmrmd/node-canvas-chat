@@ -11,7 +11,6 @@ import {
   useSecondsRemaining,
   type RateLimitNotice,
 } from "@/lib/rate-limit-notice";
-import { AFTER_KEY_CONNECTED, AFTER_KEY_CONNECTED_LABEL } from "@/lib/routes";
 import {
   RateLimitAlert,
   RateLimitCleared,
@@ -19,7 +18,6 @@ import {
 import {
   Alert,
   Button,
-  ButtonLink,
   Field,
   PageHeading,
   Shell,
@@ -254,9 +252,13 @@ function ProviderRow(props: {
       {props.stored && !replacing ? (
         <div className="mt-3 flex flex-col gap-4">
           {/*
-           * The success state, with somewhere to go. A confirmation that ends
-           * in a full stop leaves the user on the last screen of onboarding
-           * wondering whether onboarding is over.
+           * The success state. It used to end in a "Start chatting" button,
+           * which closed a circle: this screen → `/` → back to this screen. A
+           * forward action that returns you to the front door is worse than no
+           * forward action, because it reads as a failed navigation rather than
+           * as a thing that has not shipped. Until the canvas lands (TES-5) the
+           * honest ending is a sentence; `AFTER_KEY_CONNECTED` goes unused
+           * until there is somewhere real for it to point.
            */}
           {justSaved ? (
             <Alert tone="ok" title="Key verified and saved">
@@ -271,10 +273,12 @@ function ProviderRow(props: {
             {props.stored.last4}
           </p>
 
+          <p className="text-sm leading-relaxed text-muted">
+            Your key is connected. The canvas is not live yet — you will start
+            chatting from here when it is.
+          </p>
+
           <div className="flex flex-wrap items-center gap-3">
-            <ButtonLink href={AFTER_KEY_CONNECTED}>
-              {AFTER_KEY_CONNECTED_LABEL}
-            </ButtonLink>
             <Button
               type="button"
               variant="secondary"
