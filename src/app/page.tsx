@@ -109,24 +109,28 @@ export default async function Home() {
           )}
         </p>
 
-        <ol className="mt-12 divide-y divide-hairline border-y border-hairline">
-          {steps.map((step, index) => (
-            <li key={step.title} className="flex gap-4 py-4">
-              <span
-                aria-hidden="true"
-                className="font-mono text-xs leading-6 text-muted"
-              >
-                {index + 1}
-              </span>
-              <div>
-                <h2 className="text-sm font-medium leading-6">{step.title}</h2>
-                <p className="mt-1 text-pretty text-sm leading-relaxed text-muted">
-                  {step.body}
-                </p>
-              </div>
-            </li>
-          ))}
-        </ol>
+        {/* Signed out only: "1. Create an account" is stale advice for someone
+            who already has one. */}
+        {user ? null : (
+          <ol className="mt-12 divide-y divide-hairline border-y border-hairline">
+            {steps.map((step, index) => (
+              <li key={step.title} className="flex gap-4 py-4">
+                <span
+                  aria-hidden="true"
+                  className="font-mono text-xs leading-6 text-muted"
+                >
+                  {index + 1}
+                </span>
+                <div>
+                  <h2 className="text-sm font-medium leading-6">{step.title}</h2>
+                  <p className="mt-1 text-pretty text-sm leading-relaxed text-muted">
+                    {step.body}
+                  </p>
+                </div>
+              </li>
+            ))}
+          </ol>
+        )}
 
         <p className="mt-8 text-sm text-muted">
           Open source, MIT licensed.{" "}
