@@ -149,11 +149,23 @@
   --color-control-disabled: var(--control-disabled);
   --color-control-disabled-foreground: var(--control-disabled-foreground);
   /*
-   * A message is never shaped like a control. Radius is one of the three
-   * independent signals that says so — the others are the tonal fill and the
-   * 3px rail. Controls take `rounded-sm` (6px), messages take `rounded-md`
-   * (10px), and the gap between the two is what survives a greyscale
-   * screenshot of the sign-up error state.
+   * A message is never shaped like a control. Radius is one of the four
+   * independent signals that says so — the others are the tonal fill, the 3px
+   * rail and the icon. Controls take `rounded-sm` (6px), messages and the prose
+   * panels they sit among take `rounded-md` (10px), and the gap between the two
+   * is what survives a greyscale screenshot of the sign-up error state.
+   *
+   * Only two values, on purpose. A third would make the pair a gradient the eye
+   * has to rank instead of a binary it can read, and the binary is the whole
+   * point. Everything that draws a corner picks one of the two: `Button`,
+   * `ButtonLink`, `Field`, `TextLink`, the `Shell` eyebrow and the `Alert`
+   * action button are 6px; the `Alert` body, the trust panel, the rescue path
+   * and the delete-account region are 10px. That list is the whole set, because
+   * no screen rolls its own control shape — `components/ui.tsx` owns every one,
+   * and the landing page's local copies drifted to 10px precisely because they
+   * were local. `rounded-lg`/`rounded-xl` and Tailwind's built-in `rounded-xs`
+   * are not part of the vocabulary; reaching for one means the element is
+   * neither a control nor a message, which is usually a sign that it should be.
    */
   --radius-sm: 6px;
   --radius-md: 10px;

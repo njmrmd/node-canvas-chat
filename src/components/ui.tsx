@@ -148,9 +148,28 @@ export function Field({
           // 16px. See the note above.
           "rounded-sm border bg-transparent px-3 py-2 text-base outline-none",
           mono ? "font-mono" : "",
-          // Arbitrary variant on purpose: `aria-invalid` is not one of
-          // Tailwind's built-in `aria-*` variants.
-          "border-border-input aria-[invalid=true]:border-[1.5px] aria-[invalid=true]:border-danger",
+          /*
+           * Arbitrary variant on purpose: `aria-invalid` is not one of
+           * Tailwind's built-in `aria-*` variants.
+           *
+           * 2px, not the 1.5px the spec asks for, because **Chrome floors
+           * border-width to whole CSS pixels**: measured in Chrome for Testing
+           * at both DPR 1 and DPR 2, every value from 1px to 1.99px computes
+           * back to 1px, inline styles included. `outline-width` floors the
+           * same way. So 1.5px is not a thing this property can express, and
+           * the choice is 1px or 2px.
+           *
+           * `box-shadow` *can* hold 1.5px, but an inset ring overwrites the
+           * focus ring — measured: the focus indicator disappears entirely on
+           * an invalid field — and losing the focus outline to gain half a
+           * pixel is a bad trade.
+           *
+           * The point of the rule is that at 1px in --danger the field reads as
+           * slightly warm rather than broken; 2px is the nearest weight the
+           * platform will actually draw. It shifts no layout: the outer box
+           * measures 448x44 at 1px and at 2px alike.
+           */
+          "border-border-input aria-[invalid=true]:border-2 aria-[invalid=true]:border-danger",
           "focus-visible:ring-2 focus-visible:ring-foreground focus-visible:ring-offset-2 focus-visible:ring-offset-background",
           "disabled:border-hairline disabled:bg-control-disabled disabled:text-control-disabled-foreground disabled:cursor-not-allowed",
         ].join(" ")}
