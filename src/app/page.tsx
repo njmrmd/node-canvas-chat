@@ -134,6 +134,14 @@ export default async function Home() {
          * The same fact in both states, but only one of them is an instruction.
          * "It takes about a minute to create" is a nudge to go and do it now,
          * which is exactly wrong when there is nothing to connect it to.
+         *
+         * The closed branch defers with the clause, not with an adverb. It used
+         * to end "…to create then", and `create then` stops the reader as a
+         * typo for "create them" before it ever lands as a tense marker — the
+         * word doing the exact opposite of its job. "Creating one takes about a
+         * minute" states a property of the act rather than issuing it, and
+         * "When accounts open" has already set the tense, so the second
+         * sentence does not have to carry it as well.
          */}
         <p className="mt-4 text-sm leading-relaxed text-muted">
           {accountsOpen ? (
@@ -151,7 +159,7 @@ export default async function Home() {
               <TextLink href={PROVIDERS.anthropic.consoleUrl} external>
                 {PROVIDERS.anthropic.label} API key
               </TextLink>
-              . It takes about a minute to create then, and we never see your
+              . Creating one takes about a minute, and we never see your
               provider bill.
             </>
           )}
