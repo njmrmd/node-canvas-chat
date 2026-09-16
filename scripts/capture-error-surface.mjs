@@ -181,9 +181,36 @@ const SCENARIOS = [
   },
   {
     name: "keys-connected",
-    note: "the ok tone — a success is role=status, not an interruption",
+    // Deliberately *not* the ok tone: this is the resting connected panel, the
+    // state a returning visitor sees. The banner is gated on `justSaved`, which
+    // a page load never sets. The tone itself is `keys-saved`, below.
+    note: "the resting connected panel — masked suffix, no banner",
     screen: "/dev/screens?screen=keys-connected",
     passive: true,
+  },
+  {
+    /*
+     * The ok tone, which went to a craft verdict unrendered.
+     *
+     * `<Alert tone="ok">` is gated on `justSaved`, and `justSaved` is only ever
+     * set by a save that succeeds in this session — so no passive page load can
+     * produce it, and the scenario that claimed to show it was showing the
+     * resting panel instead. One of the three tones had no picture.
+     *
+     * It needs a real 200 from the key route, so this is the one scenario whose
+     * body is not an error envelope.
+     *
+     * Worth keeping precisely because it is the Peak-End state: the moment a
+     * stranger finds out the key they just pasted actually works.
+     */
+    name: "keys-saved",
+    note: "the ok tone — role=status, not an interruption",
+    screen: "/dev/screens?screen=keys",
+    api: "**/api/keys/**",
+    status: 200,
+    body: { key: { provider: "anthropic", last4: "9f2c" } },
+    fill: { selector: "#key-anthropic", value: "sk-ant-not-a-real-key" },
+    submit: 'button:has-text("Connect key")',
   },
   {
     name: "no-key-empty-state",
@@ -328,6 +355,28 @@ async function run() {
               inputRadius: getComputedStyle(input).borderRadius,
               inputBorder: getComputedStyle(input).borderTopWidth,
               inputColor: getComputedStyle(input).borderTopColor,
+              /*
+               * Focus lands here, so this field is invalid *and* focused — the
+               * default presentation of a field error, not an edge case.
+               *
+               * `--tw-ring-color` holds the raw token (`#b42318`) while
+               * `borderTopColor` is already computed (`rgb(180, 35, 24)`), so
+               * the two are never string-equal even when they are the same
+               * colour. Round-trip the token through a throwaway element to get
+               * the browser's own normalised form, and compare like with like.
+               */
+              ringColor: (() => {
+                const raw = getComputedStyle(input)
+                  .getPropertyValue("--tw-ring-color")
+                  .trim();
+                if (!raw) return "";
+                const probe = document.createElement("span");
+                probe.style.color = raw;
+                document.body.appendChild(probe);
+                const normalised = getComputedStyle(probe).color;
+                probe.remove();
+                return normalised;
+              })(),
               banner: Boolean(alertEl),
               fieldErrorRole: err?.getAttribute("role") ?? null,
               describedBy: input.getAttribute("aria-describedby"),
@@ -368,6 +417,64 @@ async function run() {
             failures.push(
               `${scenario.name} ${scheme}/${label}: invalid border is ${m.inputBorder}, expected 2px`,
             );
+          }
+
+          /*
+           * The ring and the border must agree.
+           *
+           * Asserted as "same colour as the border" rather than against a hex,
+           * so it holds in both schemes without this script knowing either
+           * value. A neutral ring around a danger border puts the heaviest
+           * band on the element in the colour of chrome rather than state —
+           * in dark that was a white ring on black, which reads "focused" and
+           * nothing else, on the one field focus was deliberately sent to.
+           */
+          if (m.ringColor && m.ringColor !== m.inputColor) {
+            failures.push(
+              `${scenario.name} ${scheme}/${label}: focus ring is ${m.ringColor} but the invalid border is ${m.inputColor} — the ring is competing with the state`,
+            );
+          }
+        }
+
+        /*
+         * The ok tone. Checked, not just photographed — this is the state that
+         * reached a craft verdict with no render behind it.
+         */
+        if (scenario.name === "keys-saved") {
+          const m = await page.evaluate(() => {
+            const el = document.querySelector('[role="status"]');
+            if (!el) return { present: false };
+            const s = getComputedStyle(el);
+            return {
+              present: true,
+              radius: s.borderRadius,
+              railWidth: s.borderLeftWidth,
+              railColor: s.borderLeftColor,
+              fill: s.backgroundColor,
+            };
+          });
+          measured.push([`${scheme}/${label} alert.ok`, JSON.stringify(m)]);
+
+          if (!m.present) {
+            failures.push(
+              `${scenario.name} ${scheme}/${label}: no [role="status"] — the ok tone did not render, so nobody has seen it`,
+            );
+          } else {
+            if (parseFloat(m.radius) !== 10) {
+              failures.push(
+                `${scenario.name} ${scheme}/${label}: ok radius is ${m.radius}, expected 10px`,
+              );
+            }
+            if (parseFloat(m.railWidth) !== 3) {
+              failures.push(
+                `${scenario.name} ${scheme}/${label}: ok rail is ${m.railWidth}, expected 3px`,
+              );
+            }
+            if (m.fill === "rgba(0, 0, 0, 0)") {
+              failures.push(
+                `${scenario.name} ${scheme}/${label}: ok tone has no tonal fill`,
+              );
+            }
           }
         }
 

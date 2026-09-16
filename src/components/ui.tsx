@@ -171,6 +171,28 @@ export function Field({
            */
           "border-border-input aria-[invalid=true]:border-2 aria-[invalid=true]:border-danger",
           "focus-visible:ring-2 focus-visible:ring-foreground focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+          /*
+           * An invalid control's focus ring takes the tone.
+           *
+           * This is not a garnish on an edge case. §4 moves focus to the first
+           * invalid control on every field error, so a focused invalid field is
+           * the *default* presentation — it is the state the person lands in
+           * before they have read a word. Left neutral, the element wears three
+           * concentric bands whose outermost and heaviest is the one carrying
+           * chrome rather than state: in light a near-black ring outranks the
+           * red and the danger border reads as an inner hairline, and in dark it
+           * is a white ring around a pale red border on black, which reads
+           * "focused" and nothing else. The one field we deliberately sent them
+           * to was the one where "invalid" was hardest to see.
+           *
+           * Toned, the ring and the border agree instead of competing. The 2px
+           * offset stays: without it the two rings merge into a 4px slab and the
+           * field starts reading as a control again.
+           *
+           * (Norman: signifiers — the strongest visual signal on an element has
+           * to be the one that carries the state.)
+           */
+          "aria-[invalid=true]:focus-visible:ring-danger",
           "disabled:border-hairline disabled:bg-control-disabled disabled:text-control-disabled-foreground disabled:cursor-not-allowed",
         ].join(" ")}
       />
