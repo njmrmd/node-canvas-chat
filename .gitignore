@@ -59,4 +59,5 @@ next-env.d.ts
 # not in the history of every clone. Both paths: the older script writes under
 # `scripts/`, the `--out` default on the newer ones is the repo root.
 scripts/shots/
+scripts/shots-*/
 /shots/
