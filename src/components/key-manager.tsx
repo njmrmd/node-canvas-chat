@@ -114,10 +114,14 @@ function TrustPanel() {
     "Deleting your account deletes the key in the same transaction.",
   ];
 
+  // `--surface-subtle` exists for exactly this panel: the sentence saying the
+  // key is encrypted and never returned is the most persuasive thing on the
+  // screen, and it was previously the quietest. Lifting it off the page is what
+  // stops it reading as boilerplate.
   return (
     <section
       aria-labelledby="trust-heading"
-      className="mt-6 rounded-md border border-hairline px-4 py-3.5"
+      className="mt-6 rounded-md border border-hairline bg-surface-subtle px-4 py-3.5"
     >
       <h2 id="trust-heading" className="text-sm font-medium tracking-tight">
         What happens to your key
@@ -354,10 +358,17 @@ function ProviderRow(props: {
                 busy={busy}
               />
             ) : (
+              /*
+               * Danger ink on a neutral control border, per the spec: it has to
+               * read as a control, but it is not the loudest thing on a screen
+               * that should read as "done". The `quiet` variant left it as a
+               * line of grey text with no border and no affordance — at desktop
+               * width it read as a stray caption rather than a button.
+               */
               <Button
                 type="button"
-                variant="quiet"
-                className="-ml-4"
+                variant="secondary"
+                className="text-danger hover:border-danger-border"
                 onClick={() => setConfirmingDisconnect(true)}
                 disabled={busy}
               >

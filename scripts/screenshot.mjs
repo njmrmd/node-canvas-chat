@@ -53,11 +53,11 @@ const SCHEMES = ["light", "dark"];
 const STATES = [
   {
     name: "01-sign-up-default",
-    path: "/sign-up",
+    path: "/dev/screens?screen=sign-up",
   },
   {
     name: "02-sign-up-field-errors",
-    path: "/sign-up",
+    path: "/dev/screens?screen=sign-up",
     steps: [
       { type: "fill", selector: "#email", value: "not-an-email" },
       { type: "fill", selector: "#password", value: "abc" },
@@ -66,7 +66,7 @@ const STATES = [
   },
   {
     name: "03-sign-up-server-error",
-    path: "/sign-up",
+    path: "/dev/screens?screen=sign-up",
     stub: {
       "/api/auth/signup": {
         status: 409,
@@ -87,7 +87,7 @@ const STATES = [
   },
   {
     name: "04-sign-up-rate-limited",
-    path: "/sign-up",
+    path: "/dev/screens?screen=sign-up",
     stub: {
       "/api/auth/signup": {
         status: 429,
@@ -109,7 +109,7 @@ const STATES = [
   },
   {
     name: "05-sign-in-invalid-credentials",
-    path: "/sign-in",
+    path: "/dev/screens?screen=sign-in",
     stub: {
       "/api/auth/signin": {
         status: 401,
@@ -126,6 +126,13 @@ const STATES = [
       { type: "fill", selector: "#password", value: "a-long-enough-password" },
       { type: "click", selector: 'button[type="submit"]' },
     ],
+  },
+  {
+    // Not a harness render: the real route, which answers with this until a
+    // database is configured. It is what the shared link shows today, so it is
+    // part of the design surface whether or not we wanted it to be.
+    name: "05b-sign-up-route-no-database",
+    path: "/sign-up",
   },
   {
     name: "06-keys-empty",
@@ -307,6 +314,24 @@ async function capture(page, state, viewport, scheme, file) {
 
   // Let React commit, and let any focus ring from a click settle.
   await page.eval(`document.activeElement && document.activeElement.blur()`);
+
+  /*
+   * Hide the dev-tools badge.
+   *
+   * It is a floating button the framework injects in development, and it sat
+   * over the rescue-path copy on the 390px frames — a reviewer reading these
+   * would be looking at an obstruction that does not exist in production. It
+   * is chrome, not product, so it does not belong in a design render.
+   */
+  await page.eval(`(() => {
+    const id = "screenshot-hide-dev-overlay";
+    if (document.getElementById(id)) return;
+    const style = document.createElement("style");
+    style.id = id;
+    style.textContent = "nextjs-portal, [data-nextjs-toast] { display: none !important; }";
+    document.head.appendChild(style);
+  })()`);
+
   await sleep(250);
 
   const { data } = await page.send("Page.captureScreenshot", {
