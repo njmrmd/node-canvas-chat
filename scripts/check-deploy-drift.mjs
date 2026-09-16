@@ -68,23 +68,31 @@ async function deployed() {
 const [remote, health] = await Promise.all([remoteSha(), deployed()]);
 const short = remote.slice(0, health.commit?.length ?? 7);
 const drifted = health.commit !== short;
+// A dirty deploy carries the right commit and the wrong code, so the SHA
+// comparison above waves it through. That is the one way this check can be
+// green while the deployment is still not the thing that was merged.
+const untrustworthy = health.dirty === true;
 
 console.log(`ref       ${REF}`);
 console.log(`remote    ${remote.slice(0, 7)}   (git ls-remote)`);
 console.log(
   `deployed  ${health.commit}   (${BASE}/api/health, ${health.environment})`,
 );
-if (health.dirty) {
-  console.log(
-    "\nThe deployment reports dirty: it was built from a working tree with\n" +
-      "uncommitted changes, so its commit does not fully describe it.",
-  );
-}
-
 if (drifted) {
   console.error(
     `\nDRIFT: ${BASE} is not serving ${REF}.\n` +
       "Whatever was merged is not what anyone is using. Deploy with\n" +
+      "  scripts/deploy.sh --prod      (from a clean checkout)",
+  );
+  process.exit(1);
+}
+
+if (untrustworthy) {
+  console.error(
+    "\nDIRTY: the deployment reports the commit on the remote, but it was\n" +
+      "built from a working tree with uncommitted changes — so the commit\n" +
+      "does not describe the code that is running, and a sign-off naming it\n" +
+      "would be naming the wrong thing. Redeploy with\n" +
       "  scripts/deploy.sh --prod      (from a clean checkout)",
   );
   process.exit(1);
