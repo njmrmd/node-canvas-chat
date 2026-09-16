@@ -2,7 +2,7 @@ import { getSessionUser } from "@/lib/auth/session";
 import { isDatabaseConfigured } from "@/lib/db";
 import { PROVIDERS } from "@/lib/providers/registry";
 import { ConversationGraph } from "@/components/conversation-graph";
-import { ButtonLink, PageHeading, Shell, TextLink } from "@/components/ui";
+import { Alert, ButtonLink, PageHeading, Shell, TextLink } from "@/components/ui";
 import { KEYS, SIGN_IN, SIGN_UP } from "@/lib/routes";
 
 /**
@@ -44,10 +44,17 @@ const steps = [
 ];
 
 export default async function Home() {
+  // The same predicate `/sign-up` and `/sign-in` already fail closed on. The
+  // front door has to answer to it too: those two pages say "accounts are not
+  // open yet" honestly, but only *after* this page has pitched the product and
+  // sent the visitor off to make an API key. A disclosure that arrives after
+  // the work is not a disclosure.
+  const accountsOpen = isDatabaseConfigured();
+
   // A visitor who already has a session should not be asked to sign up again.
   // Guarded on the database being configured so this page still renders when
   // it is not — the front door must never 500.
-  const user = isDatabaseConfigured() ? await getSessionUser() : null;
+  const user = accountsOpen ? await getSessionUser() : null;
 
   if (user) return <SignedIn />;
 
@@ -81,6 +88,33 @@ export default async function Home() {
             equivalent. */}
         <ConversationGraph className="mt-8 w-full max-w-[28rem]" />
 
+        {/*
+         * Above the buttons, and above the key sentence, because those are the
+         * two things that cost a stranger something. The expensive one is not
+         * the click — it is walking off to a third party to create a live
+         * credential for a product that cannot accept it. So this sits before
+         * both, not in small print under them.
+         *
+         * `wait`, not `error`: our misconfiguration, nothing for them to fix.
+         * The same tone and very nearly the same sentence as
+         * `ServiceUnavailable`, on purpose — one voice for one fact.
+         *
+         * Conditional on the live predicate rather than a hand-set flag, so it
+         * disappears the moment a database is configured and nobody has to
+         * remember to delete it.
+         */}
+        {accountsOpen ? null : (
+          <div className="mt-8">
+            <Alert tone="wait" title="Accounts are not open yet">
+              Nothing can be stored on this deployment yet, so creating an
+              account would fail and there is nowhere to keep a key. What is
+              described below is the product, not what you can do here today —
+              so please don&rsquo;t go and make an API key for it yet. This is
+              on us, not on you.
+            </Alert>
+          </div>
+        )}
+
         <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
           <ButtonLink href={SIGN_UP}>Create an account</ButtonLink>
           <ButtonLink href={SIGN_IN} variant="secondary">
@@ -88,13 +122,31 @@ export default async function Home() {
           </ButtonLink>
         </div>
 
+        {/*
+         * The same fact in both states, but only one of them is an instruction.
+         * "It takes about a minute to create" is a nudge to go and do it now,
+         * which is exactly wrong when there is nothing to connect it to.
+         */}
         <p className="mt-4 text-sm leading-relaxed text-muted">
-          You will need your own{" "}
-          <TextLink href={PROVIDERS.anthropic.consoleUrl} external>
-            {PROVIDERS.anthropic.label} API key
-          </TextLink>
-          . It takes about a minute to create, and we never see your provider
-          bill.
+          {accountsOpen ? (
+            <>
+              You will need your own{" "}
+              <TextLink href={PROVIDERS.anthropic.consoleUrl} external>
+                {PROVIDERS.anthropic.label} API key
+              </TextLink>
+              . It takes about a minute to create, and we never see your
+              provider bill.
+            </>
+          ) : (
+            <>
+              When accounts open you will bring your own{" "}
+              <TextLink href={PROVIDERS.anthropic.consoleUrl} external>
+                {PROVIDERS.anthropic.label} API key
+              </TextLink>
+              . It takes about a minute to create then, and we never see your
+              provider bill.
+            </>
+          )}
         </p>
 
         {/*
