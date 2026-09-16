@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api-client";
 import { errorSurfaceFor, type ErrorSurface } from "@/lib/error-surface";
@@ -90,6 +90,30 @@ export function AuthForm({ mode, next }: { mode: Mode; next?: string }) {
   const emailRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
 
+  /**
+   * Which control to focus once the failure has actually rendered.
+   *
+   * Focusing straight from the `catch` does nothing: the inputs are still
+   * `disabled` at that point — React has not re-rendered with `busy` back to
+   * false — and a disabled element cannot take focus. The person was left on
+   * `<body>` with two red fields and no cursor.
+   *
+   * A ref rather than state, keyed off `busy`: the request to move focus is not
+   * something the UI renders, so making it state would mean setting state from
+   * an effect purely to clear the request again. The effect runs on the same
+   * re-render that flips `busy` back to false, which is the one that re-enables
+   * the inputs — so by the time it fires, the target can take focus.
+   */
+  const pendingFocus = useRef<"email" | "password" | null>(null);
+
+  useEffect(() => {
+    if (busy) return;
+    const target = pendingFocus.current;
+    if (!target) return;
+    pendingFocus.current = null;
+    (target === "email" ? emailRef : passwordRef).current?.focus();
+  }, [busy]);
+
   // A 429 is a wait with a known end, so the submit stays disabled until the
   // clock runs out rather than inviting another attempt that cannot succeed.
   const secondsLeft = useSecondsRemaining(rateLimit);
@@ -176,9 +200,9 @@ export function AuthForm({ mode, next }: { mode: Mode; next?: string }) {
        * person just pressed loses their place on the form.
        */
       if (surface.focus === "password") {
-        passwordRef.current?.focus();
+        pendingFocus.current = "password";
       } else if (surface.focus === "first-invalid") {
-        (surface.fieldErrors.email ? emailRef : passwordRef).current?.focus();
+        pendingFocus.current = surface.fieldErrors.email ? "email" : "password";
       }
     }
   }
