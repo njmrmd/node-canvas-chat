@@ -46,6 +46,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history, not the default depth-1.
+          #
+          # The check decides drift by diffing the deployed commit against the
+          # remote and asking whether any *deployable* file changed — a commit
+          # touching only scripts/ is not something a visitor can see. That diff
+          # needs the deployed commit to exist locally, and in a shallow clone
+          # it does not, so the check falls back to comparing SHAs and calls a
+          # scripts-only difference drift.
+          #
+          # That is a false red, and a false red is not a harmless one here: a
+          # gate that cries wolf is one people learn to clear without reading,
+          # which is how TES-13 and TES-9 recurred. Verified the failure against
+          # a `--depth 1` clone before setting this.
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
