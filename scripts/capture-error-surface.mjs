@@ -5,10 +5,17 @@
  *   pnpm dev -p 4317
  *   node scripts/capture-error-surface.mjs        # -> scripts/shots/
  *
- * Nothing here is a mock-up. It drives `/sign-up`, `/sign-in` and the dev-only
- * `/dev/screens` harness — the shipped `AuthForm` and `KeyManager` — and only
- * intercepts the API response, so what is in the PNG is what a user would see
- * if the server actually returned that code.
+ * Nothing here is a mock-up. Every scenario drives the shipped `AuthForm` and
+ * `KeyManager` through the dev-only `/dev/screens` harness, and only intercepts
+ * the API response — so what is in the PNG is what a user would see if the
+ * server actually returned that code.
+ *
+ * The auth rows go through the harness rather than `/sign-up` and `/sign-in`
+ * directly because those pages now render `ServiceUnavailable` when there is no
+ * `DATABASE_URL`, which is correct for a visitor and useless for this: there is
+ * no form to drive, so eleven rows of the error table became unexercisable on a
+ * developer machine. The harness mounts the real component without the
+ * page-level gate, which is the reason it exists.
  *
  * It also measures the two radii and the two tap targets out of the live DOM on
  * every run and fails if they regress, because "the banner looks rounder than
@@ -72,7 +79,7 @@ const SCENARIOS = [
   {
     name: "field-invalid-request",
     note: "invalid_request with fields -> per-field messages, no banner",
-    screen: "/sign-up",
+    screen: "/dev/screens?screen=sign-up",
     status: 400,
     body: envelope("invalid_request", "Check the form.", {
       email: "That does not look like an email address.",
@@ -82,28 +89,28 @@ const SCENARIOS = [
   {
     name: "alert-invalid-request",
     note: "invalid_request without fields -> banner, error tone",
-    screen: "/sign-up",
+    screen: "/dev/screens?screen=sign-up",
     status: 400,
     body: envelope("invalid_request", "Request body is not valid JSON."),
   },
   {
     name: "alert-invalid-credentials",
     note: "invalid_credentials -> banner, never says which half was wrong",
-    screen: "/sign-in",
+    screen: "/dev/screens?screen=sign-in",
     status: 401,
     body: envelope("invalid_credentials", "Email or password is incorrect."),
   },
   {
     name: "field-email-taken",
     note: "email_taken -> field message on email with a link to sign in",
-    screen: "/sign-up",
+    screen: "/dev/screens?screen=sign-up",
     status: 409,
     body: envelope("email_taken", "That email is already registered."),
   },
   {
     name: "alert-rate-limited",
     note: "rate_limited -> wait tone, live countdown, submit disabled",
-    screen: "/sign-up",
+    screen: "/dev/screens?screen=sign-up",
     status: 429,
     headers: { "Retry-After": "47" },
     body: envelope("rate_limited", "Too many attempts from this address."),
@@ -111,7 +118,7 @@ const SCENARIOS = [
   {
     name: "alert-csrf-failed",
     note: "csrf_failed -> banner with a Reload the page action",
-    screen: "/sign-up",
+    screen: "/dev/screens?screen=sign-up",
     status: 403,
     body: envelope(
       "csrf_failed",
@@ -121,35 +128,35 @@ const SCENARIOS = [
   {
     name: "alert-not-configured",
     note: "not_configured -> wait tone, 'This one is on us'",
-    screen: "/sign-up",
+    screen: "/dev/screens?screen=sign-up",
     status: 503,
     body: envelope("not_configured", "The database is not configured yet."),
   },
   {
     name: "alert-unsupported-provider",
     note: "unsupported_provider -> error tone, no action button",
-    screen: "/sign-up",
+    screen: "/dev/screens?screen=sign-up",
     status: 400,
     body: envelope("unsupported_provider", "Unknown provider."),
   },
   {
     name: "alert-forbidden",
     note: "forbidden -> banner, no title",
-    screen: "/sign-up",
+    screen: "/dev/screens?screen=sign-up",
     status: 403,
     body: envelope("forbidden", "Not yours."),
   },
   {
     name: "alert-internal-error",
     note: "internal_error -> banner with a Try again action",
-    screen: "/sign-up",
+    screen: "/dev/screens?screen=sign-up",
     status: 500,
     body: envelope("internal_error", "Something went wrong on our side."),
   },
   {
     name: "alert-offline",
     note: "transport failure -> banner, submit re-enabled immediately",
-    screen: "/sign-up",
+    screen: "/dev/screens?screen=sign-up",
     abort: true,
   },
   {
@@ -185,9 +192,16 @@ const SCENARIOS = [
     passive: true,
   },
   {
+    name: "no-key-empty-submit",
+    note: "empty submit explains itself and spends no rate-limit slot",
+    screen: "/dev/screens?screen=keys",
+    api: "**/api/keys/**",
+    noFill: true,
+  },
+  {
     name: "session-ended",
     note: "unauthenticated -> redirect to sign-in, wait tone, no red",
-    screen: "/sign-in",
+    screen: "/dev/screens?screen=sign-in",
     passive: true,
   },
 ];
@@ -224,7 +238,15 @@ async function run() {
         const page = await context.newPage();
 
         const pattern = scenario.api ?? "**/api/auth/**";
+        /*
+         * Counted, not just stubbed. For `no-key-empty-submit` the assertion is
+         * about the request that must *not* happen: PUT /api/keys/:provider is
+         * rate limited at 20/hour, so a submit that cannot succeed must never
+         * spend one. A screenshot cannot show the absence of a request.
+         */
+        let apiCalls = 0;
         await page.route(pattern, async (route) => {
+          apiCalls += 1;
           if (scenario.abort) return route.abort("failed");
           if (!scenario.status) return route.continue();
           await route.fulfill({
@@ -241,7 +263,9 @@ async function run() {
         await page.goto(url, { waitUntil: "networkidle" });
 
         if (!scenario.passive) {
-          if (scenario.fill) {
+          if (scenario.noFill) {
+            // Deliberately nothing: the empty field is the case under test.
+          } else if (scenario.fill) {
             await page.fill(scenario.fill.selector, scenario.fill.value);
           } else {
             await page.fill("#email", "stranger@example.com");
@@ -257,6 +281,44 @@ async function run() {
         await page.screenshot({ path: join(SHOTS, file), fullPage: false });
 
         // --- the checks that replace looking at it -----------------------
+        if (scenario.name === "no-key-empty-submit") {
+          const m = await page.evaluate(() => {
+            const button = document.querySelector('button[type="submit"]');
+            const input = document.querySelector('input[type="password"]');
+            return {
+              buttonDisabled: !!button?.disabled,
+              fieldMessage:
+                input
+                  ?.closest("div")
+                  ?.querySelector('[id$="-error"]')
+                  ?.textContent?.trim() ?? "",
+            };
+          });
+          measured.push([
+            `${scheme}/${label} no-key-empty-submit`,
+            JSON.stringify({ ...m, apiCalls }),
+          ]);
+
+          // The affordance is visible rather than greyed out (TES-29).
+          if (m.buttonDisabled) {
+            failures.push(
+              `${scenario.name} ${scheme}/${label}: Connect key is disabled at rest`,
+            );
+          }
+          // Pressing it says why, instead of doing nothing.
+          if (!m.fieldMessage) {
+            failures.push(
+              `${scenario.name} ${scheme}/${label}: empty submit produced no field message`,
+            );
+          }
+          // And it costs nothing against the 20/hour budget.
+          if (apiCalls !== 0) {
+            failures.push(
+              `${scenario.name} ${scheme}/${label}: empty submit made ${apiCalls} request(s); it must make none`,
+            );
+          }
+        }
+
         if (scenario.name === "field-invalid-request") {
           const m = await page.evaluate(() => {
             const input = document.querySelector("#email");
@@ -431,7 +493,11 @@ async function run() {
       body: JSON.stringify(envelope("invalid_request", "Nope.")),
     }),
   );
-  await page.goto(`${BASE}/sign-up`, { waitUntil: "networkidle" });
+  // Through the harness, for the same reason the scenarios are — see the top
+  // of this file.
+  await page.goto(`${BASE}/dev/screens?screen=sign-up`, {
+    waitUntil: "networkidle",
+  });
   await page.fill("#email", "stranger@example.com");
   await page.fill("#password", "a-long-enough-password");
   await page.click('button[type="submit"]');

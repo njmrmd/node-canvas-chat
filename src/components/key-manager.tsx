@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api-client";
+import { withArticle } from "@/lib/article";
 import { errorSurfaceFor, type ErrorSurface } from "@/lib/error-surface";
 import type { StoredKeySummary } from "@/lib/keys";
 import type { ProviderId } from "@/lib/providers/registry";
@@ -182,9 +183,30 @@ function ProviderRow(props: {
     if (busy || waiting) return;
 
     // Clear at t=0, so a second identical failure still looks like it happened.
-    setBusy(true);
     setSurface(null);
     setRateLimit(null);
+
+    /*
+     * The empty case is answered here, not by the server and not by a disabled
+     * button. `PUT /api/keys/:provider` is rate limited at 20/hour, and a
+     * request that cannot succeed should never spend one of those — the same
+     * reasoning as the sign-up form in TES-10. So this returns before any
+     * network call, and the proof is in the capture script: it fails if a
+     * request leaves the browser on an empty submit.
+     */
+    if (value.trim() === "") {
+      setSurface({
+        alert: null,
+        fieldErrors: {
+          apiKey: `Paste your ${props.provider.label} key first — it starts with ${props.provider.keyPrefix}.`,
+        },
+        focus: null,
+      });
+      keyRef.current?.focus();
+      return;
+    }
+
+    setBusy(true);
 
     try {
       const { key } = await apiFetch<{ key: StoredKeySummary }>(
@@ -382,7 +404,14 @@ function ProviderRow(props: {
           />
 
           <div className="flex flex-wrap items-center gap-3">
-            <Button type="submit" disabled={busy || waiting || value.trim() === ""}>
+            {/*
+              Enabled at rest, on purpose. A greyed-out primary on a first-run
+              screen hides the affordance and never says why it is refusing —
+              the visitor is left to guess that the field is the problem. The
+              empty case is caught on press instead, below, where it can be
+              explained.
+            */}
+            <Button type="submit" disabled={busy || waiting}>
               {busy ? (
                 <>
                   <Spinner />
@@ -448,7 +477,7 @@ function RescuePath({ provider }: { provider: ProviderView }) {
   return (
     <aside className="mt-2 rounded-md border border-hairline px-4 py-3.5 text-sm leading-relaxed text-muted">
       <p className="font-medium text-foreground">
-        Do not have a {provider.label} key?
+        Don&rsquo;t have {withArticle(provider.label)} key?
       </p>
       <ol className="mt-2 flex list-decimal flex-col gap-1.5 pl-4">
         <li>
