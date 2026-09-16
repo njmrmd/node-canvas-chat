@@ -49,6 +49,58 @@ await withPage(async (page) => {
     await page.emulate({ ...viewport, scheme: "light" });
     await page.navigate(`${BASE}/sign-up`);
 
+    /*
+     * Two shapes are correct here, and which one you get depends on whether
+     * the deployment has a database.
+     *
+     * With one, the form renders and the interesting question is whether
+     * pressing the button produces a sentence rather than silence. Without
+     * one, the page says accounts are not open *before* asking for anything —
+     * a better answer than a legible failure after the fact, because the
+     * visitor never invents a password that cannot be stored.
+     *
+     * So the absence of the form is a pass, not a crash. Asserting the form
+     * exists would be asserting the worse of the two behaviours.
+     */
+    const hasForm = await page.eval(
+      `!!document.querySelector('#email') && !!document.querySelector('button[type="submit"]')`,
+    );
+
+    if (!hasForm) {
+      const closed = await page.eval(`(() => {
+        const alerts = [...document.querySelectorAll('[role="alert"]')]
+          .map((el) => el.innerText.trim())
+          .filter(Boolean);
+        return { alerts, bodyText: document.body.innerText };
+      })()`);
+
+      await writeFile(
+        join(OUT, `signup-closed--${viewport.name}.png`),
+        await page.screenshot({ beyondViewport: true }),
+      );
+
+      const said = closed.alerts.join(" ");
+      console.log(`\n--- ${viewport.name} @ /sign-up (no form) ---`);
+      console.log(`alerts: ${JSON.stringify(closed.alerts)}`);
+
+      check(
+        viewport.name,
+        closed.alerts.length > 0,
+        "sign-up being closed is stated up front, not left blank",
+      );
+      check(
+        viewport.name,
+        !/not_configured|invalid_request|\bat .*\(.*:\d+:\d+\)/.test(said),
+        "the message is a sentence, not an error code or a stack frame",
+      );
+      check(
+        viewport.name,
+        !/password/i.test(closed.bodyText),
+        "no password is requested on a deployment that cannot store one",
+      );
+      continue;
+    }
+
     // Set the values through the native setter so React's onChange sees them;
     // assigning .value directly updates the DOM and leaves state stale.
     await page.eval(`(() => {
