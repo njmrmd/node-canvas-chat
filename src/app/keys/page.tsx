@@ -8,7 +8,8 @@ import { PROVIDERS, PROVIDER_IDS } from "@/lib/providers/registry";
 
 export const dynamic = "force-dynamic";
 
-export const metadata = { title: "Model access · Node Canvas Chat" };
+// Suffixed by the root layout's title template.
+export const metadata = { title: "Model access" };
 
 /**
  * The signed-in surface.

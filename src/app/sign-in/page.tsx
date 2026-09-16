@@ -6,7 +6,8 @@ import { isDatabaseConfigured } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
-export const metadata = { title: "Sign in · Node Canvas Chat" };
+// Suffixed by the root layout's title template.
+export const metadata = { title: "Sign in" };
 
 export default async function SignInPage({
   searchParams,

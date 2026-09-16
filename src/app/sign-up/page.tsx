@@ -6,7 +6,9 @@ import { isDatabaseConfigured } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
-export const metadata = { title: "Create an account · Node Canvas Chat" };
+// The "· Node Canvas Chat" suffix comes from the title template in the root
+// layout now, so it is not repeated here.
+export const metadata = { title: "Create an account" };
 
 export default async function SignUpPage({
   searchParams,
