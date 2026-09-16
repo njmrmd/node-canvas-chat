@@ -1,0 +1,57 @@
+name: Deploy drift
+
+# Deploys on this repo are manual (`scripts/deploy.sh --prod`) — the Vercel
+# GitHub App is not installed on this repo's owner, so merging changes nothing
+# about what strangers are served. That gap is silent, and the silence is the
+# bug: TES-13 and TES-9 were one landing-page defect closed twice on repo
+# renders, and TES-29 was closed `done` while its fix sat behind production.
+#
+# A closed ticket prompts nobody, and `scripts/check-deploy-drift.mjs` only
+# helps the person who remembers to run it. This runs it for them, so the gap
+# shows up as a red mark on main instead of as a surprise in the next QA pass.
+#
+# Expect this to be red between a merge and the deploy that follows it. That
+# window is real, and naming it is the entire point.
+
+on:
+  push:
+    branches: [main]
+  # Production can also go stale without anyone pushing — a rollback, a paused
+  # project, a deployment deleted out from under the alias.
+  #
+  # This schedule stays here rather than moving to `crons` in vercel.json, and
+  # the reason is the point of the check: a Vercel cron runs *inside* the
+  # deployment. A stale deployment would run the stale deployment's cron, and a
+  # deployment that failed outright would run nothing — so the one thing being
+  # watched for is the one thing that would stop the watcher. A check on whether
+  # a deploy is current has to run somewhere other than that deploy. (Two
+  # smaller reasons: hobby allows two cron jobs at one-per-day, which is too
+  # scarce to spend here, and a cron's output lands in Vercel logs, where
+  # nothing prompts anyone — which is the failure being fixed.)
+  schedule:
+    - cron: "0 8 * * *"
+  workflow_dispatch:
+
+# The check reads a public health endpoint and asks the git host for a ref.
+# It deploys nothing and needs no token.
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-drift
+  cancel-in-progress: true
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # No install step: the check uses only node builtins and fetch, so it
+      # stays green even when a dependency problem is what broke the deploy.
+      - name: Is production serving what is on main?
+        run: node scripts/check-deploy-drift.mjs
