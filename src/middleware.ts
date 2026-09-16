@@ -60,12 +60,23 @@ export function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     /*
-     * Everything except static assets and the favicon — those are served
-     * straight from the CDN and a policy header on them buys nothing while
-     * costing a middleware invocation.
+     * Everything except static assets, the favicon, and the dev server's
+     * hot-reload socket.
+     *
+     * Static assets are served straight from the CDN, so a policy header on
+     * them buys nothing while costing a middleware invocation.
+     *
+     * `_next/hmr` is a websocket *upgrade*, and returning a normal HTTP
+     * response to one — which is all `NextResponse.next()` can do — fails the
+     * handshake with `ERR_INVALID_HTTP_RESPONSE`. Next's dev client waits on
+     * that socket before it hydrates, so with this path matched the page
+     * renders and then never becomes interactive: every form on the site is
+     * dead under `next dev`, while production is fine. It cost an afternoon to
+     * find, because "the markup is there" looks like a working page.
      */
     {
-      source: "/((?!_next/static|_next/image|favicon.ico).*)",
+      source:
+        "/((?!_next/static|_next/image|_next/hmr|_next/webpack-hmr|favicon.ico).*)",
       missing: [
         { type: "header", key: "next-router-prefetch" },
         { type: "header", key: "purpose", value: "prefetch" },
