@@ -86,7 +86,15 @@ export default async function Home() {
             they are signing up for while they are still reading the sentence
             that promised it. Decorative and aria-hidden; the lede is its text
             equivalent. */}
-        <ConversationGraph className="mt-8 w-full max-w-[28rem]" />
+        {/*
+         * Centred, not left-aligned. At `max-w-xl` the 28rem box sat flush
+         * with the text rag, which put the *figure* inside it about 64px left
+         * of the column's axis — close enough to centred to read as a mistake
+         * rather than as a decision. A symmetric drawing has only one honest
+         * axis in a single-column layout, and it is the column's. Below `sm`
+         * the box is already full width, so this changes nothing on a phone.
+         */}
+        <ConversationGraph className="mt-8 w-full max-w-[28rem] sm:mx-auto" />
 
         {/*
          * Above the buttons, and above the key sentence, because those are the
