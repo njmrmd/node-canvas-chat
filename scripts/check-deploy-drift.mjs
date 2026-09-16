@@ -1,7 +1,17 @@
 #!/usr/bin/env node
 /**
- * Answers one question: is the *product* the deployment serves the product that
- * was merged?
+ * Answers one question across three layers: is the product a visitor gets the
+ * product that has actually been written?
+ *
+ *   local     this checkout's HEAD          — work that exists nowhere else
+ *   remote    git ls-remote                 — what has been shared
+ *   deployed  /api/health over the network  — what a visitor is served
+ *
+ * A gap at either join is a way for "done" to mean nothing. The check started
+ * with only remote↔deployed; QA pointed out that the wider gap in a workspace
+ * two runs share is local↔remote, and that three of their last four findings
+ * lived there — including a production link card contradicting the page it
+ * opened, because the fix sat unpushed five commits deep.
  *
  *   node scripts/check-deploy-drift.mjs                    # production vs origin/main
  *   node scripts/check-deploy-drift.mjs --base https://... --ref refs/heads/main
@@ -98,6 +108,28 @@ async function deployedHealth() {
   return response.json();
 }
 
+/**
+ * This checkout's HEAD, or null when there is no usable git context.
+ *
+ * The third layer. The two the check started with — remote and deployed — miss
+ * the gap this repo actually has: work finished in a shared checkout and never
+ * pushed. That is invisible to anything anchored on the remote, and QA found
+ * three of their last four defects living in it, including a production link
+ * card contradicting the page it opened because the fix was sitting unpushed
+ * five commits deep.
+ *
+ * Silent in CI, where the checkout *is* the remote, so this costs nothing
+ * there and only speaks where a human or an agent is holding unpushed work.
+ */
+async function localSha() {
+  try {
+    const { stdout } = await run("git", ["rev-parse", "HEAD"]);
+    return stdout.trim();
+  } catch {
+    return null;
+  }
+}
+
 /** Files changed between two commits, or null when the range is unresolvable. */
 async function changedFiles(from, to) {
   try {
@@ -114,9 +146,24 @@ async function changedFiles(from, to) {
   }
 }
 
-const [remote, health] = await Promise.all([remoteSha(), deployedHealth()]);
+const [remote, health, local] = await Promise.all([
+  remoteSha(),
+  deployedHealth(),
+  localSha(),
+]);
 const short = remote.slice(0, health.commit?.length ?? 7);
 const sameSha = health.commit === short;
+
+/*
+ * Unpushed work, classified the same way as drift: only commits that can reach
+ * a visitor are a problem. A local branch ahead by a harness commit is normal
+ * and says nothing; ahead by a page component means the product has a fix
+ * nobody outside this checkout can get.
+ */
+const localAhead = local && local !== remote ? await changedFiles(remote, local) : [];
+const localUnresolvable = localAhead === null;
+const localDeployable = (localAhead ?? []).filter(isDeployable);
+const unpushedProduct = localDeployable.length > 0;
 
 /*
  * A dirty deploy carries the right commit and the wrong code, so no SHA or
@@ -131,6 +178,11 @@ const deployableChanges = (changed ?? []).filter(isDeployable);
 const drifted = STRICT || unresolvable ? !sameSha : deployableChanges.length > 0;
 
 console.log(`ref       ${REF}`);
+if (local) {
+  console.log(
+    `local     ${local.slice(0, 7)}   (this checkout${local === remote ? ", pushed" : ", NOT on the remote"})`,
+  );
+}
 console.log(`remote    ${remote.slice(0, 7)}   (git ls-remote)`);
 console.log(
   `deployed  ${health.commit}   (${BASE}/api/health, ${health.environment})`,
@@ -157,11 +209,36 @@ if (!sameSha && !STRICT) {
   }
 }
 
+if (local && local !== remote) {
+  if (localUnresolvable) {
+    console.log(
+      `unpushed  ${local.slice(0, 7)} vs ${remote.slice(0, 7)} — range unresolvable, not classified`,
+    );
+  } else {
+    const skipped = localAhead.length - localDeployable.length;
+    console.log(
+      `unpushed  ${localAhead.length} file(s) in this checkout only — ` +
+        `${localDeployable.length} deployable, ${skipped} not`,
+    );
+    for (const file of localDeployable.slice(0, 10)) {
+      console.log(`            ${file}`);
+    }
+  }
+}
+
 if (drifted) {
   console.error(
     `\nDRIFT: ${BASE} is not serving the product on ${REF}.\n` +
       "Whatever was merged is not what anyone is using. Deploy with\n" +
       "  scripts/deploy.sh --prod      (from a clean checkout)",
+  );
+}
+
+if (unpushedProduct) {
+  console.error(
+    "\nUNPUSHED: this checkout holds product changes that are on no remote.\n" +
+      "Nobody else can see them and no deploy can pick them up — the commit\n" +
+      "exists and the fix does not. Push before treating any of it as done.",
   );
 }
 
@@ -174,7 +251,7 @@ if (untrustworthy) {
   );
 }
 
-if (drifted || untrustworthy) process.exit(1);
+if (drifted || untrustworthy || unpushedProduct) process.exit(1);
 
 if (!sameSha) {
   console.log(
