@@ -185,6 +185,13 @@ const STATES = [
     ],
   },
   {
+    // D4/C7: the rescue path is a disclosure, so the open state is the one
+    // that has to be reviewed — closed it is a single line of summary text.
+    name: "09b-keys-rescue-path-open",
+    path: "/dev/screens?screen=keys",
+    steps: [{ type: "click", selector: "details summary" }],
+  },
+  {
     name: "10-keys-connected-resting",
     path: "/dev/screens?screen=keys-connected",
   },
@@ -192,6 +199,11 @@ const STATES = [
     name: "11-keys-delete-account-confirm",
     path: "/dev/screens?screen=keys-connected",
     steps: [{ type: "clickText", text: "Delete account" }],
+  },
+  {
+    name: "12-keys-disconnect-confirm",
+    path: "/dev/screens?screen=keys-connected",
+    steps: [{ type: "clickText", text: "Disconnect this key" }],
   },
 ];
 

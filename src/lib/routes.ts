@@ -13,15 +13,18 @@ export const KEYS = "/keys";
  * Where a user goes once their key is connected — the last step of onboarding
  * hands off to the product.
  *
- * Deliberately unused right now. The canvas route does not exist yet (TES-5),
- * and pointing this at the landing page closed a circle: key screen → `/` →
- * back to the key screen. A forward action that returns you to the front door
- * reads as a broken link, not as a feature that has not shipped, so the key
- * screen ends in a sentence until there is somewhere real to go.
+ * Points at the signed-in front door, which is a real screen: it names what is
+ * and is not live, and it is where the canvas will open from. An earlier change
+ * removed this action because `/` was then the marketing scaffold and the trip
+ * was a circle; `SignedIn()` in `app/page.tsx` has since made it a destination.
  *
- * When the canvas lands: point this at it and restore the `ButtonLink` in
- * `key-manager.tsx`. Both ends of that loop — here and the signed-in landing
- * page — say "the canvas is not live yet" and both need updating together.
+ * The label is deliberately not "Start chatting". Naming an action after
+ * something that has not shipped spends the user's trust at the exact moment
+ * they have just handed over a credential — the button moves them on, and the
+ * sentence beside it says what is missing.
+ *
+ * When the canvas lands: point this at it, change the label to name it, and
+ * update the matching sentences in `key-manager.tsx` and `SignedIn()`.
  */
 export const AFTER_KEY_CONNECTED = "/";
-export const AFTER_KEY_CONNECTED_LABEL = "Start chatting";
+export const AFTER_KEY_CONNECTED_LABEL = "Continue";

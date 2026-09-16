@@ -265,29 +265,51 @@ export function Button({
   );
 }
 
-/** A link that carries the weight of a primary action. */
+/**
+ * A link that carries the weight of a primary action.
+ *
+ * `external` swaps `next/link` for a plain anchor in a new tab. It exists for
+ * the one link on the key screen that leaves for the provider's console: that
+ * is a standalone action at the end of a rescue path, so it needs a button's
+ * 44px target rather than a 12px underline — and sending it through the client
+ * router would be wrong for an off-origin URL.
+ */
 export function ButtonLink({
   href,
   children,
   variant = "primary",
   full,
+  external,
 }: {
   href: string;
   children: React.ReactNode;
   variant?: ButtonVariant;
   full?: boolean;
+  external?: boolean;
 }) {
+  const className = [
+    CONTROL_HEIGHT,
+    "inline-flex items-center justify-center gap-2 rounded-sm px-4 text-sm font-medium outline-none transition-colors",
+    "focus-visible:ring-2 focus-visible:ring-foreground focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+    VARIANTS[variant],
+    full ? "w-full" : "",
+  ].join(" ");
+
+  if (external) {
+    return (
+      <a
+        href={href}
+        target="_blank"
+        rel="noreferrer noopener"
+        className={className}
+      >
+        {children}
+      </a>
+    );
+  }
+
   return (
-    <Link
-      href={href}
-      className={[
-        CONTROL_HEIGHT,
-        "inline-flex items-center justify-center gap-2 rounded-sm px-4 text-sm font-medium outline-none transition-colors",
-        "focus-visible:ring-2 focus-visible:ring-foreground focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-        VARIANTS[variant],
-        full ? "w-full" : "",
-      ].join(" ")}
-    >
+    <Link href={href} className={className}>
       {children}
     </Link>
   );

@@ -8,6 +8,10 @@ import { errorSurfaceFor, type ErrorSurface } from "@/lib/error-surface";
 import type { StoredKeySummary } from "@/lib/keys";
 import type { ProviderId } from "@/lib/providers/registry";
 import {
+  AFTER_KEY_CONNECTED,
+  AFTER_KEY_CONNECTED_LABEL,
+} from "@/lib/routes";
+import {
   formatCountdown,
   useSecondsRemaining,
   type RateLimitNotice,
@@ -19,11 +23,11 @@ import {
 import {
   Alert,
   Button,
+  ButtonLink,
   Field,
   PageHeading,
   Shell,
   Spinner,
-  TextLink,
 } from "@/components/ui";
 
 /**
@@ -274,13 +278,21 @@ function ProviderRow(props: {
       {props.stored && !replacing ? (
         <div className="mt-3 flex flex-col gap-4">
           {/*
-           * The success state. It used to end in a "Start chatting" button,
-           * which closed a circle: this screen → `/` → back to this screen. A
-           * forward action that returns you to the front door is worse than no
-           * forward action, because it reads as a failed navigation rather than
-           * as a thing that has not shipped. Until the canvas lands (TES-5) the
-           * honest ending is a sentence; `AFTER_KEY_CONNECTED` goes unused
-           * until there is somewhere real for it to point.
+           * The success state, and it ends in a button on purpose (D3/C6).
+           *
+           * This forward action was removed once, on the reasoning that it
+           * closed a circle — key screen → `/` → back to the key screen. That
+           * was true when `/` was still the marketing scaffold. It is not true
+           * now: `/` has a signed-in state that is the product's own front
+           * door, says plainly what is and is not live, and is where the canvas
+           * will open from. So the destination is a real place, and the spec's
+           * ruling stands — a success state with nowhere to go is where a
+           * stranger's evaluation quietly ends.
+           *
+           * The label is honest rather than aspirational. It does not say
+           * "Start a canvas" while there is no canvas; the sentence under it
+           * says what has not shipped, and `AFTER_KEY_CONNECTED` is the one
+           * line to change when TES-5 lands.
            */}
           {justSaved ? (
             <Alert tone="ok" title="Key verified and saved">
@@ -296,11 +308,14 @@ function ProviderRow(props: {
           </p>
 
           <p className="text-sm leading-relaxed text-muted">
-            Your key is connected. The canvas is not live yet — you will start
-            chatting from here when it is.
+            Your key is connected. The canvas is not live yet — it will open
+            from your home screen when it is.
           </p>
 
           <div className="flex flex-wrap items-center gap-3">
+            <ButtonLink href={AFTER_KEY_CONNECTED}>
+              {AFTER_KEY_CONNECTED_LABEL}
+            </ButtonLink>
             <Button
               type="button"
               variant="secondary"
@@ -330,31 +345,14 @@ function ProviderRow(props: {
            */}
           <div className="mt-2 border-t border-hairline pt-4">
             {confirmingDisconnect ? (
-              <div className="flex flex-col gap-3">
-                <p className="text-sm text-muted">
-                  Remove the stored {props.provider.label} key? Chat stops
-                  working until you paste another one.
-                </p>
-                <div className="flex flex-wrap items-center gap-3">
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    onClick={disconnect}
-                    disabled={busy}
-                  >
-                    {busy ? <Spinner /> : null}
-                    Remove key
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="quiet"
-                    onClick={() => setConfirmingDisconnect(false)}
-                    disabled={busy}
-                  >
-                    Keep it
-                  </Button>
-                </div>
-              </div>
+              <ConfirmStep
+                prompt={`Remove the stored ${props.provider.label} key? Chat stops working until you paste another one.`}
+                confirmLabel="Remove key"
+                cancelLabel="Keep it"
+                onConfirm={disconnect}
+                onCancel={() => setConfirmingDisconnect(false)}
+                busy={busy}
+              />
             ) : (
               <Button
                 type="button"
@@ -475,32 +473,113 @@ function ProviderRow(props: {
  */
 function RescuePath({ provider }: { provider: ProviderView }) {
   return (
-    <aside className="mt-2 rounded-md border border-hairline px-4 py-3.5 text-sm leading-relaxed text-muted">
-      <p className="font-medium text-foreground">
-        Don&rsquo;t have {withArticle(provider.label)} key?
-      </p>
-      <ol className="mt-2 flex list-decimal flex-col gap-1.5 pl-4">
-        <li>
-          Open the{" "}
-          <TextLink href={provider.consoleUrl} external>
-            {provider.label} console
-          </TextLink>{" "}
-          and create an API key.
-        </li>
-        <li>
-          Copy it straight away — the console shows the full key once and never
-          again.
-        </li>
-        <li>
-          Paste it above. It starts with{" "}
-          <code className="font-mono">{provider.keyPrefix}</code>.
-        </li>
-      </ol>
-      <p className="mt-2.5">
-        API keys are billed by {provider.label}, not by us, and a brand-new
-        account usually needs a payment method before its keys will work.
-      </p>
-    </aside>
+    <details className="group mt-2 rounded-md border border-hairline px-4 py-3.5 text-sm leading-relaxed text-muted [&_summary::-webkit-details-marker]:hidden">
+      <summary className="-my-1 flex cursor-pointer list-none items-center justify-between gap-3 py-1 font-medium text-foreground outline-none focus-visible:ring-2 focus-visible:ring-foreground">
+        I don&rsquo;t have {withArticle(provider.label)} key
+        <span
+          aria-hidden="true"
+          className="shrink-0 text-muted transition-transform group-open:rotate-180"
+        >
+          <Chevron />
+        </span>
+      </summary>
+
+      <div className="mt-2.5 flex flex-col gap-2.5">
+        <p>
+          You need {withArticle(provider.label)} account with billing enabled.
+          Create one, open <strong className="font-medium">API keys</strong>,
+          and make a key — it starts with{" "}
+          <code className="font-mono">{provider.keyPrefix}</code> and takes
+          about two minutes.
+        </p>
+        <p>
+          You pay {provider.label} directly for what you use. Typical
+          evaluation costs are cents, and nothing is charged by us.
+        </p>
+        <div className="pt-0.5">
+          <ButtonLink href={provider.consoleUrl} variant="secondary" external>
+            Open the {provider.label} console
+          </ButtonLink>
+        </div>
+      </div>
+    </details>
+  );
+}
+
+/**
+ * The two-step confirm, shared by "disconnect this key" and "delete this
+ * account" so the two destructive paths cannot drift apart.
+ *
+ * Escape cancels, and Cancel takes focus the moment the step opens. Without
+ * both, a keyboard user who reaches a destructive confirm has no way out except
+ * to tab onto the one button they did not mean to press — and the cancel is
+ * where focus belongs anyway, because it is the safe answer.
+ *
+ * The prompt names the consequence plainly and stops there. No guilt copy and
+ * no extra hoops: account deletion is currently the only self-service recovery
+ * from a lost password, so making it harder would punish the person it exists
+ * for.
+ */
+function ConfirmStep(props: {
+  prompt: string;
+  confirmLabel: string;
+  cancelLabel: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+  busy: boolean;
+}) {
+  return (
+    <div
+      role="group"
+      aria-label={props.prompt}
+      onKeyDown={(event) => {
+        if (event.key !== "Escape" || props.busy) return;
+        // The confirm is the innermost thing listening; nothing above it should
+        // also act on this Escape.
+        event.stopPropagation();
+        props.onCancel();
+      }}
+      className="flex flex-col gap-3"
+    >
+      <p className="text-sm leading-relaxed text-muted">{props.prompt}</p>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <Button
+          type="button"
+          variant="destructive"
+          onClick={props.onConfirm}
+          disabled={props.busy}
+        >
+          {props.busy ? <Spinner /> : null}
+          {props.confirmLabel}
+        </Button>
+        <Button
+          type="button"
+          variant="quiet"
+          onClick={props.onCancel}
+          disabled={props.busy}
+          // Focus the safe answer, not the destructive one.
+          autoFocus
+        >
+          {props.cancelLabel}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function Chevron() {
+  return (
+    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+      <path
+        d="m4 6 4 4 4-4"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }
 
@@ -581,25 +660,14 @@ function AccountSection({
 
         <div className="mt-3">
           {confirming ? (
-            <div className="flex flex-wrap items-center gap-3">
-              <Button
-                type="button"
-                variant="destructive"
-                onClick={deleteAccount}
-                disabled={busy}
-              >
-                {busy ? <Spinner /> : null}
-                Yes, delete everything
-              </Button>
-              <Button
-                type="button"
-                variant="quiet"
-                onClick={() => setConfirming(false)}
-                disabled={busy}
-              >
-                Cancel
-              </Button>
-            </div>
+            <ConfirmStep
+              prompt="Delete the account, the stored key and everything in it? This cannot be undone."
+              confirmLabel="Yes, delete everything"
+              cancelLabel="Cancel"
+              onConfirm={deleteAccount}
+              onCancel={() => setConfirming(false)}
+              busy={busy}
+            />
           ) : (
             <Button
               type="button"
