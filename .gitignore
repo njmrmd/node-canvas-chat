@@ -53,3 +53,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Screenshot evidence from scripts/capture-error-surface.mjs. Regenerable from
+# the script on any checkout, and ~8MB a run — it belongs on the ticket it is
+# evidence for, not in the history of every clone.
+scripts/shots/
