@@ -66,13 +66,14 @@ export const config = {
      * Static assets are served straight from the CDN, so a policy header on
      * them buys nothing while costing a middleware invocation.
      *
-     * `_next/hmr` is a websocket *upgrade*, and returning a normal HTTP
-     * response to one — which is all `NextResponse.next()` can do — fails the
-     * handshake with `ERR_INVALID_HTTP_RESPONSE`. Next's dev client waits on
-     * that socket before it hydrates, so with this path matched the page
-     * renders and then never becomes interactive: every form on the site is
-     * dead under `next dev`, while production is fine. It cost an afternoon to
-     * find, because "the markup is there" looks like a working page.
+     * `_next/hmr` is the dev server's hot-reload websocket. A CSP nonce is
+     * meaningless on an upgrade request, and there is no reason to run this on
+     * a socket that reconnects on a timer.
+     *
+     * It is excluded here for that reason alone. If you are chasing a dev
+     * server whose pages render but never become interactive, the cause is not
+     * this matcher — it is the dev origin allowlist, and the fix is
+     * `allowedDevOrigins` in `next.config.ts`, which has the full write-up.
      */
     {
       source:
