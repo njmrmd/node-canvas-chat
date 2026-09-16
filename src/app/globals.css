@@ -149,11 +149,26 @@
   --color-control-disabled: var(--control-disabled);
   --color-control-disabled-foreground: var(--control-disabled-foreground);
   /*
-   * A message is never shaped like a control. Radius is one of the four
-   * independent signals that says so — the others are the tonal fill, the 3px
-   * rail and the icon. Controls take `rounded-sm` (6px), messages and the prose
-   * panels they sit among take `rounded-md` (10px), and the gap between the two
-   * is what survives a greyscale screenshot of the sign-up error state.
+   * A message is never shaped like a control. Four independent signals say so —
+   * the tonal fill, the 3px rail, the icon, and radius. Controls take
+   * `rounded-sm` (6px); messages and the prose panels they sit among take
+   * `rounded-md` (10px).
+   *
+   * Radius is the weakest of the four and it is worth being honest about that
+   * rather than letting the next reader over-trust it. `capture-greyscale-
+   * shapes.mjs` renders both sign-up failure states with the colour emulated
+   * away, and in those PNGs 4px of corner on a 40px-tall box is not a
+   * difference the eye resolves — the rail is what you actually see, with the
+   * icon behind it. Radius earns its place by being free and by making the
+   * other three look deliberate, not by carrying the distinction alone.
+   *
+   * The state that proves why redundancy is the point is the rate-limited one.
+   * There the submit is disabled, so it takes a `--control-disabled` fill of
+   * very nearly the same luminance as `--warning-surface`, and in greyscale the
+   * tonal-fill signal collapses: banner and button become two grey rectangles
+   * the same width. The rail and the icon are the whole margin in that frame.
+   * Any change that drops one of the four has to be checked against that state,
+   * not against the error state, which is the easy one.
    *
    * Only two values, on purpose. A third would make the pair a gradient the eye
    * has to rank instead of a binary it can read, and the binary is the whole
