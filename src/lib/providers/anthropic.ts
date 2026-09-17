@@ -19,13 +19,25 @@ import type { ChatMessage, ChatStreamEvent } from "./types";
  *  runaway response, which matters when the user is paying for it. */
 const MAX_TOKENS = 32_000;
 
-/** Requests are user-initiated and interactive; do not sit on a dead socket. */
-const TIMEOUT_MS = 120_000;
+/**
+ * Two very different operations shared one 120s timeout, sized for the one
+ * that needs it: a streamed completion, which `/api/chat` gives a matching
+ * `maxDuration = 300` to run inside. `validateApiKey` calls `models.list`, a
+ * single cheap GET, from a route with no `maxDuration` override — so it runs
+ * inside Vercel's platform default, which is well under 120s. A real key that
+ * legitimately takes longer than usual to authenticate would hit the
+ * *platform's* timeout first, not ours, and surface as an abrupt connection
+ * error indistinguishable from Anthropic itself being unreachable. Giving
+ * validation its own short, intentional timeout means our code decides when
+ * to give up, with room to spare inside the route's own budget below.
+ */
+const CHAT_TIMEOUT_MS = 120_000;
+const VALIDATE_TIMEOUT_MS = 20_000;
 
-function clientFor(apiKey: string): Anthropic {
+function clientFor(apiKey: string, timeout: number): Anthropic {
   return new Anthropic({
     apiKey,
-    timeout: TIMEOUT_MS,
+    timeout,
     maxRetries: 1,
   });
 }
@@ -133,7 +145,7 @@ function toApiError(error: unknown): ApiError {
  */
 export async function validateApiKey(apiKey: string): Promise<void> {
   try {
-    await clientFor(apiKey).models.list({ limit: 1 });
+    await clientFor(apiKey, VALIDATE_TIMEOUT_MS).models.list({ limit: 1 });
   } catch (error) {
     throw toApiError(error);
   }
@@ -157,7 +169,7 @@ export async function* streamChat(options: {
   messages: ChatMessage[];
   signal: AbortSignal;
 }): AsyncGenerator<ChatStreamEvent> {
-  const stream = clientFor(options.apiKey).messages.stream(
+  const stream = clientFor(options.apiKey, CHAT_TIMEOUT_MS).messages.stream(
     {
       model: options.model,
       max_tokens: MAX_TOKENS,

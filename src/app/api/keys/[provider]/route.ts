@@ -9,6 +9,12 @@ import { POLICIES, enforce, rateLimitHeaders, userSubject } from "@/lib/rate-lim
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+// `validateApiKey` gives itself a 20s client-side timeout (see
+// providers/anthropic.ts) specifically so it decides when to give up rather
+// than Vercel's platform default doing it first. This just has to be
+// comfortably larger than that, not equal to it.
+export const maxDuration = 30;
+
 type Context = { params: Promise<{ provider: string }> };
 
 /** Keys are opaque to us, but an empty or absurd value is not worth a round trip. */
