@@ -84,9 +84,40 @@ const SPEC_ELSEWHERE = {
   "starter.1": "Name this product three different ways",
   "starter.2": "Explain recursion — then explain it to a 10-year-old",
   "starter.3": "Draft a cold email I can A/B",
+
+  /* §4.12 and §4.7 give these as exact quoted placeholder text, just not in
+   * the §9 table — the same "quoted from prose" treatment as the group above. */
+  "composer.placeholder.offline": "Offline",
+  "composer.placeholder.rateLimited": "Daily limit reached",
 } as const;
 
-export const COPY = { ...SPEC_9, ...SPEC_ELSEWHERE } as const;
+/**
+ * Strings the build needs that §9 does not name at all — not a transcription,
+ * because there is nothing to transcribe. Placeholder text, not final copy;
+ * flagged to Design Engineer in the same breath as this file's existing gap
+ * list below rather than treated as settled.
+ */
+const LOCAL_PLACEHOLDERS = {
+  /* §6 `<LinearView>` — heading and the Copy-all action. */
+  "linearview.heading": "Linear view",
+  "linearview.copyAll": "Copy all",
+  "linearview.close": "Close linear view",
+  /* §6 `<ShortcutsSheet>` — title and its close control. */
+  "shortcuts.title": "Keyboard shortcuts",
+  "shortcuts.close": "Close",
+  /* §4.9 focus-path toggle — the spec names the key (`F`) and "a top-bar
+   * toggle" but not its label. */
+  "focuspath.toggle": "Focus path",
+  /* §4.11 past the 5000ms load budget. */
+  "canvas.loadError": "Taking longer than expected.",
+  "canvas.loadRetry": "Retry",
+  /* §4.6 delete: the spec's confirm-dialog copy, reused as the undo toast's
+   * body — see the `delete` implementation note in `use-canvas-controller.ts`
+   * for why this ships as an undo toast rather than a blocking dialog. */
+  "delete.undo.action": "Undo",
+} as const;
+
+export const COPY = { ...SPEC_9, ...SPEC_ELSEWHERE, ...LOCAL_PLACEHOLDERS } as const;
 
 export type CopyKey = keyof typeof COPY;
 

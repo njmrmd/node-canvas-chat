@@ -1,0 +1,218 @@
+/*
+ * Behaviour that inline styles cannot express: hover/focus states, keyframe
+ * animations, and the §7.5 `prefers-reduced-motion` overrides. Static layout,
+ * colour and spacing stay as inline `style={{ ... }}` reading `var(--token)`
+ * directly (see `canvas-tokens.css`'s note on why Tailwind's `@theme` is not
+ * extended with these) — this file is only for what inline style cannot do.
+ *
+ * Every class here is scoped under `.canvas-surface` implicitly by only being
+ * used inside it; none of these names are generic enough to need the prefix
+ * repeated, but the file itself is only ever loaded by the canvas route.
+ */
+
+/* Positions the card in canvas space. Transform-only, per §5.6: never
+ * left/top. Transitions only when not actively being dragged, so a reflow or
+ * an auto-placed sibling settling in animates while a live drag tracks the
+ * pointer with zero lag. */
+.cv-node-slot {
+  position: absolute;
+  top: 0;
+  left: 0;
+  will-change: transform;
+}
+
+.cv-node-slot[data-animate="true"] {
+  transition: transform var(--dur-mid) var(--ease-out);
+}
+
+/* The pan/zoom transform layer. Same rule: no transition mid-gesture. */
+.cv-world[data-animate="true"] {
+  transition: transform var(--dur-base) var(--ease-out);
+}
+
+.cv-node {
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
+}
+
+.cv-node:hover:not([data-dragging="true"]) {
+  background: var(--surface-2);
+  transform: translateY(-1px);
+}
+
+.cv-node[data-dragging="true"] {
+  transform: scale(1.02);
+  cursor: grabbing;
+}
+
+.cv-node[data-dropped="true"] {
+  transition:
+    transform var(--dur-base) var(--ease-drop),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+
+.cv-branch-handle {
+  opacity: 0;
+  transform: scale(0.85);
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out);
+}
+
+.cv-node:hover .cv-branch-handle,
+.cv-node:focus-within .cv-branch-handle,
+.cv-branch-handle[data-force-visible="true"] {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.cv-branch-handle:hover:not([disabled]) {
+  background: var(--accent);
+  transform: scale(1.1);
+}
+
+.cv-branch-handle[data-pulse="true"] {
+  animation: cv-branch-pulse 600ms var(--ease-out) 1;
+}
+
+@keyframes cv-branch-pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.12); }
+  100% { transform: scale(1); }
+}
+
+.cv-node-actions {
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+.cv-node:hover .cv-node-actions,
+.cv-node:focus-within .cv-node-actions {
+  opacity: 1;
+}
+
+.cv-action-button:hover {
+  background: var(--surface-2);
+}
+
+.cv-action-delete {
+  color: var(--text-tertiary);
+}
+
+.cv-action-delete:hover {
+  color: var(--danger);
+  background: var(--surface-2);
+}
+
+.cv-caret {
+  animation: cv-caret-blink 1000ms step-end infinite;
+}
+
+@keyframes cv-caret-blink {
+  0%, 50% { opacity: 1; }
+  50.01%, 100% { opacity: 0; }
+}
+
+.cv-skeleton-bar {
+  position: relative;
+  overflow: hidden;
+  background: var(--surface-2);
+}
+
+.cv-skeleton-bar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--surface-3),
+    transparent
+  );
+  animation: cv-shimmer 1400ms ease-in-out infinite;
+}
+
+@keyframes cv-shimmer {
+  100% { transform: translateX(100%); }
+}
+
+.cv-spin {
+  animation: cv-spin 900ms linear infinite;
+}
+
+@keyframes cv-spin {
+  to { transform: rotate(360deg); }
+}
+
+.cv-coach-tip {
+  animation: cv-coach-in var(--dur-mid) var(--ease-out);
+}
+
+@keyframes cv-coach-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.cv-toast {
+  animation: cv-coach-in var(--dur-mid) var(--ease-out);
+}
+
+.cv-edge-highlight {
+  transition: opacity var(--dur-base) var(--ease-out), stroke var(--dur-base) var(--ease-out);
+}
+
+.cv-focus-ring:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.cv-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: inherit;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cv-node,
+  .cv-node[data-dropped="true"],
+  .cv-branch-handle,
+  .cv-node-actions,
+  .cv-edge-highlight,
+  .cv-node-slot[data-animate="true"],
+  .cv-world[data-animate="true"] {
+    transition-duration: 0.001ms !important;
+  }
+
+  .cv-node:hover:not([data-dragging="true"]) {
+    transform: none;
+  }
+
+  .cv-branch-handle[data-pulse="true"] {
+    animation: none;
+    box-shadow: 0 0 0 2px var(--accent) inset;
+  }
+
+  .cv-caret {
+    animation: none;
+    opacity: 1;
+  }
+
+  .cv-skeleton-bar::after {
+    animation: none;
+    display: none;
+  }
+
+  .cv-coach-tip,
+  .cv-toast {
+    animation: none;
+  }
+}
