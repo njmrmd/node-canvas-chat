@@ -35,9 +35,18 @@ function clientFor(apiKey: string): Anthropic {
  *
  * `logging without leakage`: the provider's message can echo request content,
  * so we never forward it verbatim. The user gets a sentence they can act on;
- * the detail stays on our side of the boundary.
+ * the detail stays on our side of the boundary. The SDK's error *class* is not
+ * request content, though, and every branch below folds into the same
+ * "provider_unavailable" bucket for the user — so without this, a rate limit,
+ * a malformed request and a dropped connection are indistinguishable after
+ * the fact. Logging the class name costs nothing a key or a prompt could own.
  */
 function toApiError(error: unknown): ApiError {
+  console.error(
+    "[anthropic] classified error:",
+    error instanceof Error ? error.constructor.name : typeof error,
+  );
+
   if (error instanceof Anthropic.AuthenticationError) {
     return new ApiError(
       "invalid_api_key",
