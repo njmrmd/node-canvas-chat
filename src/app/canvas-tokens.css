@@ -1,0 +1,254 @@
+/*
+ * §5 of the canvas spec, as named custom properties.
+ *
+ * Spec acceptance criterion §12.2 is "every token in §5 exists as a named custom
+ * property and every component uses tokens, not literals". This file is the
+ * first half of that sentence. It is a transcription, not a design: every value
+ * below is copied from the spec table it names, and changing one here without
+ * changing it there is a bug in this file.
+ *
+ * Three structural decisions, because each one is load-bearing:
+ *
+ * 1. **Scoped to `.canvas-surface`, never `:root`.** §5 reuses four names the
+ *    pre-canvas surface already owns with *different* values — `--danger`
+ *    (`#b42318` there, `#FF6B6B` here), `--warning`, `--success`, and
+ *    `--ease-out` (`cubic-bezier(0.2, 0, 0, 1)` there, `(0.16, 1, 0.3, 1)`
+ *    here). At `:root` these would silently restyle sign-up and the key screen.
+ *    `globals.css` already says the canvas "has its own visual direction and
+ *    does not inherit this block"; scoping is how that sentence is enforced
+ *    rather than merely asserted. The corollary is real and intended: a shared
+ *    component rendered *inside* the canvas picks up canvas values.
+ *
+ * 2. **`light-dark()` rather than two blocks.** Each colour is one declaration
+ *    holding both schemes, so the two palettes cannot drift apart — the failure
+ *    mode where someone tunes a dark hex and leaves its light twin stale is
+ *    unrepresentable. It also means `check-contrast.mjs` reads one file and gets
+ *    both schemes, so a token added without a light value is a parse error, not
+ *    a missing row nobody notices.
+ *
+ * 3. **Dark is the default by `color-scheme`, not by media query.** See the
+ *    theme block below — the spec says two different things here and this file
+ *    implements both, with the spec's stronger intent as the default.
+ *
+ * Tailwind's `@theme inline` in `globals.css` is deliberately *not* extended
+ * with these. That block is global, and adding `--radius-lg`/`--radius-xl` to it
+ * would re-enable `rounded-lg`/`rounded-xl` on the pre-canvas surface, which
+ * that file rules out on purpose. Inside `.canvas-surface` the scoped
+ * redefinitions below do reach Tailwind's own radius utilities, so `rounded-lg`
+ * means 14px here and 8px nowhere — which is the behaviour we want, but it is
+ * action at a distance and worth knowing about.
+ */
+
+.canvas-surface {
+  /*
+   * §11.1 and §5.4 disagree, and this is the one place it shows.
+   *
+   * §5.4 says light "follows `prefers-color-scheme` unless the user overrides".
+   * §11.1 says dark ships as *the* default so "a stranger opening the link
+   * should see something that looks deliberate", with light "one toggle away".
+   * Those are different products for the majority of people, whose OS is set to
+   * light: the first gives them light, the second gives them dark.
+   *
+   * Implemented as §11.1, because it is the stronger and more recent statement
+   * and it is the one the CEO is being asked to rule on. §5.4's reading is not
+   * discarded — it is `data-theme="system"`, a real third mode the toggle can
+   * offer. If the CEO overrules §11.1, this one declaration changes to
+   * `light dark` and nothing else in the file moves.
+   *
+   * Flagged to Design Engineer: §5.4 and §11.1 need to agree in the document.
+   */
+  color-scheme: dark;
+
+  /* ---- §5.1 Type -------------------------------------------------------- */
+
+  /*
+   * `Inter var` is not loaded yet — the app ships Geist for the pre-canvas
+   * surface. `--font-inter` is the hook the canvas route sets via `next/font`;
+   * until it does, this falls through to the spec's own fallback stack rather
+   * than silently rendering in Geist and looking close enough.
+   */
+  --font-canvas:
+    var(--font-inter, "Inter var"), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", sans-serif;
+  --font-canvas-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /*
+   * The `font` shorthand carries size, line-height and weight in one value, so
+   * a type token is applied as a pair:
+   *
+   *   font: var(--text-sm); letter-spacing: var(--tracking-sm);
+   *
+   * Tracking cannot ride in the shorthand, which is why it is a second token
+   * rather than an oversight. Where tracking is `0` the token still exists, so
+   * no call site has to know which sizes have tracking and which do not.
+   */
+  --text-2xs: 500 11px/14px var(--font-canvas);
+  --tracking-2xs: 0.02em;
+  --text-xs: 500 12px/16px var(--font-canvas);
+  --tracking-xs: 0.01em;
+  --text-sm: 400 14px/21px var(--font-canvas);
+  --tracking-sm: 0;
+  --text-base: 400 16px/25px var(--font-canvas);
+  --tracking-base: 0;
+  --text-lg: 600 18px/26px var(--font-canvas);
+  --tracking-lg: -0.01em;
+  --text-2xl: 600 32px/38px var(--font-canvas);
+  --tracking-2xl: -0.02em;
+
+  /* Assistant markdown `code`, §5.1. */
+  --text-code: 400 13px/20px var(--font-canvas-mono);
+
+  /*
+   * §5.4: the user's text is the same size and colour as the assistant's and
+   * differs only in weight. Role is signalled by position and typography, never
+   * hue — so these two are tokens, not a `font-weight: 500` someone types into
+   * `<NodeCard>` and someone else later "tidies" away.
+   */
+  --weight-user-text: 500;
+  --weight-assistant-text: 400;
+
+  /* ---- §5.2 Spacing — 4px base ------------------------------------------ */
+
+  --space-0: 0px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-8: 48px;
+  --space-10: 64px;
+  --space-12: 96px;
+
+  /* ---- §5.3 Radius ------------------------------------------------------ */
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+  --radius-full: 9999px;
+
+  /* ---- §5.4 Colour ------------------------------------------------------ */
+
+  /*
+   * `light-dark(light, dark)`. Ratios in the comments are *measured*, not
+   * copied from the spec table — `pnpm check:contrast` recomputes every one and
+   * fails the build on a regression, so a number here that drifts from reality
+   * is caught rather than believed.
+   *
+   * Two rows are marked OPEN. They are the spec's values, implemented verbatim,
+   * and they miss a floor the spec itself sets in §7.4. Deviating quietly would
+   * be worse than carrying them: colour is the Design Engineer's call, the
+   * checker names both rows on every run, and the proposed fixes are in the
+   * child issue linked from `check-contrast.mjs`.
+   */
+  --canvas-bg: light-dark(#f7f8fa, #0b0d10);
+  --canvas-dot: light-dark(#dde2e9, #1a1f26);
+
+  --surface-1: light-dark(#ffffff, #14181d);
+  --surface-2: light-dark(#f2f4f7, #1a1f26);
+  /*
+   * Light `surface-3` is `#FFFFFF` + `shadow-2` in the spec — the elevation,
+   * not the fill, is what separates a popover from the card behind it in light.
+   */
+  --surface-3: light-dark(#ffffff, #20262e);
+
+  /* Dividers inside a card. Decorative: never the boundary identifying a
+   * region, so exempt from 3:1 (1.18 light / 1.25 dark). */
+  --border-subtle: light-dark(#e9ecf1, #242b33);
+  /* The resting card border. Carries no state — the error border is `danger`,
+   * and selection is an inset accent ring — so also exempt (1.40 / 1.48). */
+  --border-default: light-dark(#d5dae2, #2e3742);
+  /*
+   * OPEN — §7.4 requires the branch-handle outline to clear 3:1. The handle is
+   * `surface-3` filled with a `border-strong` outline (§6), which measures
+   * 2.96:1 on light `surface-3` and 2.41:1 on dark. It is the product's primary
+   * affordance and the one Fitts target the spec singles out.
+   */
+  --border-strong: light-dark(#8d97a5, #55616f);
+  /*
+   * OPEN — §7.4 says this hex was "chosen specifically to clear 3:1 against the
+   * canvas background". It does in dark (3.08). In light it measures 2.78, and
+   * an edge is the one graphic that is never redundant: §1.2 makes the line the
+   * sole carrier of the ancestry relation, so it is squarely 1.4.11 non-text.
+   */
+  --edge-default: light-dark(#8d97a5, #55616f);
+
+  --text-primary: light-dark(#10141a, #e8ecf1); /* 18.47 / 15.02 on surface-1 */
+  --text-secondary: light-dark(#4a5563, #a3adba); /* 7.58 / 7.85 */
+  --text-tertiary: light-dark(#6b7683, #7c8795); /* 4.62 / 4.89 — placeholders */
+
+  --accent: light-dark(#3b5bdb, #6e8bff); /* 5.67 / 5.77 on surface-1 */
+  --accent-hover: light-dark(#2f4bc4, #8aa1ff); /* 7.18 / 7.32 */
+  --accent-fg: light-dark(#ffffff, #0b0d10); /* 5.67 / 6.30 on accent */
+  --accent-soft: light-dark(rgba(59, 91, 219, 0.1), rgba(110, 139, 255, 0.14));
+
+  --success: light-dark(#0f7a4e, #3fcf8e); /* 5.37 / 8.94 */
+  --warning: light-dark(#b45309, #f5a524); /* 5.02 / 8.73 */
+  --danger: light-dark(#c92a2a, #ff6b6b); /* 5.46 / 6.42 */
+
+  --focus-ring: light-dark(#2f4bc4, #8aa1ff); /* 7.18 / 7.32 */
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 2px;
+
+  /* ---- §5.5 Elevation --------------------------------------------------- */
+
+  /* Same geometry in both schemes; only the alpha differs (0.06/0.10/0.14 light,
+   * 0.30/0.34/0.44 dark). */
+  --shadow-0: none;
+  --shadow-1: 0 1px 2px light-dark(rgba(0, 0, 0, 0.06), rgba(0, 0, 0, 0.3));
+  --shadow-2: 0 4px 14px light-dark(rgba(0, 0, 0, 0.1), rgba(0, 0, 0, 0.34));
+  --shadow-3: 0 16px 40px light-dark(rgba(0, 0, 0, 0.14), rgba(0, 0, 0, 0.44));
+
+  /* ---- §5.6 Motion ------------------------------------------------------ */
+
+  /*
+   * Nothing on the canvas animates longer than `--dur-xslow`. §5.6 is explicit
+   * that past ~380ms a transition reads as latency rather than feedback, so a
+   * component reaching for a literal duration is a spec violation and not a
+   * style preference.
+   */
+  --dur-fast: 120ms;
+  --dur-base: 180ms;
+  --dur-mid: 240ms;
+  --dur-slow: 320ms;
+  --dur-xslow: 380ms;
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  /* Node settle on drop only — the overshoot is wrong anywhere else. */
+  --ease-drop: cubic-bezier(0.34, 1.4, 0.64, 1);
+
+  /* ---- §5.7 Z-layers ---------------------------------------------------- */
+
+  --z-canvas: 0;
+  --z-edges: 10;
+  --z-node: 20;
+  --z-node-selected: 30;
+  --z-node-dragging: 40;
+  --z-chrome: 50;
+  --z-composer: 60;
+  --z-popover: 70;
+  --z-toast: 80;
+  --z-modal: 90;
+}
+
+/*
+ * The three theme modes. Only `color-scheme` changes — every `light-dark()`
+ * above resolves against it, so a theme switch is one property on one element
+ * and there is no second palette to keep in step.
+ *
+ * `system` is §5.4's reading, available to the toggle; the unsuffixed default
+ * above is §11.1's.
+ */
+.canvas-surface[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+.canvas-surface[data-theme="light"] {
+  color-scheme: light;
+}
+
+.canvas-surface[data-theme="system"] {
+  color-scheme: light dark;
+}

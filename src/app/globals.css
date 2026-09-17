@@ -1,6 +1,13 @@
 @import "tailwindcss";
 
 /*
+ * The canvas's own token layer (§5 of the spec). Everything in it is scoped to
+ * `.canvas-surface`, so it is inert on the pre-canvas screens below and cannot
+ * collide with the names they share — see the header of that file.
+ */
+@import "./canvas-tokens.css";
+
+/*
  * Tokens for the pre-canvas surface (sign-up, sign-in, key connection).
  *
  * Every value below that sits under a component border, an error, or a success
