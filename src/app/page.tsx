@@ -3,7 +3,7 @@ import { isDatabaseConfigured } from "@/lib/db";
 import { PROVIDERS } from "@/lib/providers/registry";
 import { ConversationGraph } from "@/components/conversation-graph";
 import { Alert, ButtonLink, PageHeading, Shell, TextLink } from "@/components/ui";
-import { KEYS, SIGN_IN, SIGN_UP } from "@/lib/routes";
+import { CANVAS, KEYS, SIGN_IN, SIGN_UP } from "@/lib/routes";
 
 /**
  * The front door. This is the first thing a stranger sees, and the only page
@@ -209,19 +209,22 @@ export default async function Home() {
  *
  * Not the hero. Someone returning has already bought the pitch, and showing it
  * to them again left roughly 330px of content floating in a vertically-centred
- * phone screen. This is the product's own frame, and it says plainly what is
- * and is not live rather than implying the button opens a canvas.
+ * phone screen. This is the product's own frame, and its one job is to hand
+ * off to the canvas — key management moves to a secondary link now that there
+ * is a primary destination to send people to.
  */
 function SignedIn() {
   return (
     <Shell>
       <PageHeading title="Welcome back.">
-        Your model access lives on the key screen. The canvas is not live yet —
-        when it is, it will open from here.
+        Pick up your canvas, or manage the model access it uses.
       </PageHeading>
 
-      <div className="mt-8">
-        <ButtonLink href={KEYS}>Manage model access</ButtonLink>
+      <div className="mt-8 flex flex-wrap gap-3">
+        <ButtonLink href={CANVAS}>Open the canvas</ButtonLink>
+        <ButtonLink href={KEYS} variant="secondary">
+          Manage model access
+        </ButtonLink>
       </div>
     </Shell>
   );

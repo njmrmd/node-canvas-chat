@@ -8,23 +8,15 @@
 export const SIGN_IN = "/sign-in";
 export const SIGN_UP = "/sign-up";
 export const KEYS = "/keys";
+export const CANVAS = "/canvas";
 
 /**
  * Where a user goes once their key is connected — the last step of onboarding
  * hands off to the product.
  *
- * Points at the signed-in front door, which is a real screen: it names what is
- * and is not live, and it is where the canvas will open from. An earlier change
- * removed this action because `/` was then the marketing scaffold and the trip
- * was a circle; `SignedIn()` in `app/page.tsx` has since made it a destination.
- *
- * The label is deliberately not "Start chatting". Naming an action after
- * something that has not shipped spends the user's trust at the exact moment
- * they have just handed over a credential — the button moves them on, and the
- * sentence beside it says what is missing.
- *
- * When the canvas lands: point this at it, change the label to name it, and
- * update the matching sentences in `key-manager.tsx` and `SignedIn()`.
+ * TES-5 landed, so this points at the canvas itself rather than the signed-in
+ * front door it used to name as a placeholder — see the comment this replaced
+ * for why that redirection existed and what it was waiting on.
  */
-export const AFTER_KEY_CONNECTED = "/";
-export const AFTER_KEY_CONNECTED_LABEL = "Continue";
+export const AFTER_KEY_CONNECTED = CANVAS;
+export const AFTER_KEY_CONNECTED_LABEL = "Open the canvas";

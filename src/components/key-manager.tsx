@@ -286,17 +286,8 @@ function ProviderRow(props: {
            *
            * This forward action was removed once, on the reasoning that it
            * closed a circle — key screen → `/` → back to the key screen. That
-           * was true when `/` was still the marketing scaffold. It is not true
-           * now: `/` has a signed-in state that is the product's own front
-           * door, says plainly what is and is not live, and is where the canvas
-           * will open from. So the destination is a real place, and the spec's
-           * ruling stands — a success state with nowhere to go is where a
-           * stranger's evaluation quietly ends.
-           *
-           * The label is honest rather than aspirational. It does not say
-           * "Start a canvas" while there is no canvas; the sentence under it
-           * says what has not shipped, and `AFTER_KEY_CONNECTED` is the one
-           * line to change when TES-5 lands.
+           * was true when `/` was still the marketing scaffold. TES-5 has
+           * since landed, so the destination is the canvas itself.
            */}
           {justSaved ? (
             <Alert tone="ok" title="Key verified and saved">
@@ -312,8 +303,7 @@ function ProviderRow(props: {
           </p>
 
           <p className="text-sm leading-relaxed text-muted">
-            Your key is connected. The canvas is not live yet — it will open
-            from your home screen when it is.
+            Your key is connected.
           </p>
 
           <div className="flex flex-wrap items-center gap-3">
