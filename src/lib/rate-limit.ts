@@ -40,6 +40,12 @@ export const POLICIES = {
   keyWrite: { bucket: "key_write", limit: 20, windowSeconds: 3600 },
   /** Per account. The main product action. */
   chat: { bucket: "chat", limit: 60, windowSeconds: 3600 },
+  /**
+   * Per account. Debounced client writes (§2.5: position 500ms, viewport
+   * 1000ms), so normal use is a handful a minute — this is a backstop against
+   * a runaway client loop, not a real limit on saving your own canvas.
+   */
+  canvasWrite: { bucket: "canvas_write", limit: 120, windowSeconds: 60 },
 } as const satisfies Record<string, RateLimitPolicy>;
 
 export type RateLimitResult = {

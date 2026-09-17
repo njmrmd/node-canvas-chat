@@ -51,6 +51,10 @@ export type NodeError = {
 
 export type Point = { x: number; y: number };
 
+/** §1.1: `auto` nodes are re-placed by Tidy; a dragged node becomes `manual`
+ *  and Tidy never touches it again. */
+export type PositionMode = "auto" | "manual";
+
 export type ConversationNode = {
   id: string;
   /** `null` for a root. A graph may hold several roots. */
@@ -63,6 +67,9 @@ export type ConversationNode = {
   status: NodeStatus;
   error: NodeError | null;
   position: Point;
+  positionMode: PositionMode;
+  /** §4.9: subtree hidden below this node, chevron shows a count instead. */
+  collapsed: boolean;
   usage: { inputTokens: number; outputTokens: number } | null;
   createdAt: number;
   updatedAt: number;
@@ -198,6 +205,8 @@ export function addNode(
     status: "draft",
     error: null,
     position: input.position,
+    positionMode: "auto",
+    collapsed: false,
     usage: null,
     createdAt: now,
     updatedAt: now,
@@ -249,13 +258,43 @@ function patchNode(
   };
 }
 
+/** A drag: sets the position and pins the node to `manual` so Tidy leaves it alone. */
 export function moveNode(
   graph: ConversationGraph,
   nodeId: string,
   position: Point,
   now?: number,
 ): ConversationGraph {
+  return patchNode(graph, nodeId, { position, positionMode: "manual" }, now);
+}
+
+/** Auto-placement writing a computed position without disturbing `positionMode`. */
+export function placeNode(
+  graph: ConversationGraph,
+  nodeId: string,
+  position: Point,
+  now?: number,
+): ConversationGraph {
   return patchNode(graph, nodeId, { position }, now);
+}
+
+export function setCollapsed(
+  graph: ConversationGraph,
+  nodeId: string,
+  collapsed: boolean,
+  now?: number,
+): ConversationGraph {
+  return patchNode(graph, nodeId, { collapsed }, now);
+}
+
+/** §2.4 Tidy: every node reverts to `auto` so the next layout pass places it. */
+export function resetAllToAuto(graph: ConversationGraph, now?: number): ConversationGraph {
+  let next = graph;
+  for (const id of graph.nodeIds) {
+    if (graph.nodesById[id].positionMode === "auto") continue;
+    next = patchNode(next, id, { positionMode: "auto" }, now);
+  }
+  return next;
 }
 
 export function setPrompt(
