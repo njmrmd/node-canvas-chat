@@ -64,7 +64,26 @@ function describe(accountsOpen: boolean): string {
     : `${premise} Accounts are not open on this deployment yet.`;
 }
 
-const TITLE = `${PRODUCT} — a conversation is a graph, not a list`;
+/**
+ * The headline as a card shows it, standing on its own because `og:site_name`
+ * is already carrying the product name beside it.
+ *
+ * It used to be prefixed with the product name too, and that is exactly what
+ * broke it: Apple's LinkPresentation — the framework Messages.app itself runs —
+ * de-duplicates `og:site_name` out of `og:title` when the title begins with it.
+ * So iMessage rendered the remainder, "a conversation is a graph, not a list",
+ * a sentence fragment opening in lowercase, with the product named nowhere in
+ * the card's text (TES-31). Slack and X are better off this way as well: the
+ * site line sits above the headline instead of the name repeating inside it.
+ */
+const HEADLINE = "A conversation is a graph, not a list";
+
+/**
+ * The browser tab and the search result, where nothing else supplies the
+ * product name, so the title has to carry it. Deliberately not the same string
+ * as `og:title` — the two are allowed to differ, and here they have to.
+ */
+const TITLE = `${PRODUCT} — ${HEADLINE.charAt(0).toLowerCase()}${HEADLINE.slice(1)}`;
 
 /**
  * A function rather than the static `metadata` object, so the description can
@@ -78,9 +97,9 @@ export function generateMetadata(): Metadata {
   return {
     metadataBase: siteUrl(),
     title: {
-      // The premise, not the product name. Someone scanning a message preview
-      // reads about six words, and "Node Canvas Chat" spends all six saying
-      // nothing.
+      // A tab strip and a search result are the two places the product name
+      // still earns its keep: neither one prints it for us the way a link card
+      // prints `og:site_name`.
       default: TITLE,
       template: `%s · ${PRODUCT}`,
     },
@@ -89,7 +108,7 @@ export function generateMetadata(): Metadata {
     openGraph: {
       type: "website",
       siteName: PRODUCT,
-      title: TITLE,
+      title: HEADLINE,
       description,
       url: "/",
     },
@@ -98,7 +117,10 @@ export function generateMetadata(): Metadata {
       // square thumbnail and the fork — the only thing the picture is about —
       // is what a square crop throws away.
       card: "summary_large_image",
-      title: TITLE,
+      // The same headline as the Open Graph card. X shows the domain rather
+      // than the site name, so nothing here is being de-duplicated — but two
+      // cards for one link should not disagree about their own headline.
+      title: HEADLINE,
       description,
     },
   };
