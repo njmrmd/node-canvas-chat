@@ -131,6 +131,11 @@ function canvasTokensFor(scheme) {
  *   both of these rows miss the floor in only *one* scheme. A shared pin would
  *   be the weaker of the two, which would quietly license the passing scheme to
  *   fall below 3:1 — the exact regression this row exists to catch.
+ *
+ *   `edge stroke on canvas` and `branch handle outline` were resolved in
+ *   TES-39 and no longer need this per-scheme pin — both clear 3:1 with margin
+ *   in both schemes now, so they use the plain threshold every other
+ *   non-`open` row uses.
  */
 const CANVAS_PAIRS = [
   // Text — WCAG 1.4.3 AA, and §7.4 "all body and meta text >= 4.5:1".
@@ -161,28 +166,17 @@ const CANVAS_PAIRS = [
    * §1.2 makes the edge the sole carrier of the ancestry relation — there is no
    * second signal for "B's conversation includes all of A" — so it is squarely
    * meaningful non-text. §7.4 says this hex was "chosen specifically to clear
-   * 3:1 against the canvas background"; in light it does not.
+   * 3:1 against the canvas background", and since TES-39 it does in both
+   * schemes.
    */
-  [
-    "edge stroke on canvas",
-    "--edge-default",
-    "--canvas-bg",
-    { light: 2.78, dark: 3.08 },
-    "open",
-  ],
+  ["edge stroke on canvas", "--edge-default", "--canvas-bg", 3],
 
   /*
    * The branch handle is `surface-3` filled with a `border-strong` outline
    * (§6), and §7.4 names "the branch handle outline" in its 3:1 list. It is the
-   * product's primary affordance.
+   * product's primary affordance and the one Fitts target the spec singles out.
    */
-  [
-    "branch handle outline",
-    "--border-strong",
-    "--surface-3",
-    { light: 2.96, dark: 2.41 },
-    "open",
-  ],
+  ["branch handle outline", "--border-strong", "--surface-3", 3],
 
   // Decorative — reported so a palette change stays a visible decision.
   ["card divider on card", "--border-subtle", "--surface-1", 3, "info"],
@@ -258,10 +252,16 @@ if (failed > 0) {
   process.exit(1);
 }
 
+const hasOpenRows = [...PAIRS, ...CANVAS_PAIRS].some(
+  ([, , , , kind]) => kind === "open",
+);
+
 console.log(
   "\nAll contrast checks passed in both schemes." +
-    "\n\nOPEN rows are spec §5.4 values that miss a floor spec §7.4 sets. They are" +
-    "\nimplemented verbatim and pinned at their current ratio, so they can improve" +
-    "\nbut not regress. Resolution is the Design Engineer's: see the palette" +
-    "\ncontrast issue linked from src/app/canvas-tokens.css.",
+    (hasOpenRows
+      ? "\n\nOPEN rows are spec §5.4 values that miss a floor spec §7.4 sets. They are" +
+        "\nimplemented verbatim and pinned at their current ratio, so they can improve" +
+        "\nbut not regress. Resolution is the Design Engineer's: see the palette" +
+        "\ncontrast issue linked from src/app/canvas-tokens.css."
+      : ""),
 );

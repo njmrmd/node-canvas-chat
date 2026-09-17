@@ -41,21 +41,16 @@
 
 .canvas-surface {
   /*
-   * §11.1 and §5.4 disagree, and this is the one place it shows.
-   *
-   * §5.4 says light "follows `prefers-color-scheme` unless the user overrides".
-   * §11.1 says dark ships as *the* default so "a stranger opening the link
-   * should see something that looks deliberate", with light "one toggle away".
-   * Those are different products for the majority of people, whose OS is set to
-   * light: the first gives them light, the second gives them dark.
-   *
-   * Implemented as §11.1, because it is the stronger and more recent statement
-   * and it is the one the CEO is being asked to rule on. §5.4's reading is not
+   * §5.4 and §11.1 now agree (TES-39): dark ships as *the* default regardless
+   * of OS, so "a stranger opening the link should see something that looks
+   * deliberate"; light is a one-tap toggle. §5.4's OS-tracking reading is not
    * discarded — it is `data-theme="system"`, a real third mode the toggle can
-   * offer. If the CEO overrules §11.1, this one declaration changes to
-   * `light dark` and nothing else in the file moves.
+   * offer, just not the default.
    *
-   * Flagged to Design Engineer: §5.4 and §11.1 need to agree in the document.
+   * Whether dark *should* be the default is still an open product call for the
+   * CEO (§11.1 item 1) — this comment only records that the spec no longer
+   * contradicts itself while that call is pending. If the CEO rules the other
+   * way, this one declaration changes to `light dark` and nothing else moves.
    */
   color-scheme: dark;
 
@@ -136,11 +131,12 @@
    * fails the build on a regression, so a number here that drifts from reality
    * is caught rather than believed.
    *
-   * Two rows are marked OPEN. They are the spec's values, implemented verbatim,
-   * and they miss a floor the spec itself sets in §7.4. Deviating quietly would
-   * be worse than carrying them: colour is the Design Engineer's call, the
-   * checker names both rows on every run, and the proposed fixes are in the
-   * child issue linked from `check-contrast.mjs`.
+   * `edge-default` and `border-strong` were revised off the spec table's literal
+   * hexes — see TES-39. Both originally missed a 3:1 floor §7.4 itself sets (the
+   * edge on `canvas-bg` in light, the branch-handle outline on `surface-3` in
+   * dark); the Design Engineer ruled on replacement hexes there rather than
+   * reusing one value across both tokens, because the two answer to different
+   * backgrounds and coupling them is what produced the miss in the first place.
    */
   --canvas-bg: light-dark(#f7f8fa, #0b0d10);
   --canvas-dot: light-dark(#dde2e9, #1a1f26);
@@ -160,19 +156,19 @@
    * and selection is an inset accent ring — so also exempt (1.40 / 1.48). */
   --border-default: light-dark(#d5dae2, #2e3742);
   /*
-   * OPEN — §7.4 requires the branch-handle outline to clear 3:1. The handle is
-   * `surface-3` filled with a `border-strong` outline (§6), which measures
-   * 2.96:1 on light `surface-3` and 2.41:1 on dark. It is the product's primary
-   * affordance and the one Fitts target the spec singles out.
+   * §7.4 requires the branch-handle outline to clear 3:1. The handle is
+   * `surface-3` filled with a `border-strong` outline (§6) — the product's
+   * primary affordance and the one Fitts target the spec singles out — so it is
+   * measured against `surface-3`, not `canvas-bg`: 3.19:1 light, 3.05:1 dark.
    */
-  --border-strong: light-dark(#8d97a5, #55616f);
+  --border-strong: light-dark(#87919e, #637181);
   /*
-   * OPEN — §7.4 says this hex was "chosen specifically to clear 3:1 against the
-   * canvas background". It does in dark (3.08). In light it measures 2.78, and
-   * an edge is the one graphic that is never redundant: §1.2 makes the line the
-   * sole carrier of the ancestry relation, so it is squarely 1.4.11 non-text.
+   * §7.4 says this hex was "chosen specifically to clear 3:1 against the canvas
+   * background". An edge is the one graphic that is never redundant: §1.2 makes
+   * the line the sole carrier of the ancestry relation, so it is squarely
+   * 1.4.11 non-text. 3.01:1 light, 3.08:1 dark (unchanged) against `canvas-bg`.
    */
-  --edge-default: light-dark(#8d97a5, #55616f);
+  --edge-default: light-dark(#87919e, #55616f);
 
   --text-primary: light-dark(#10141a, #e8ecf1); /* 18.47 / 15.02 on surface-1 */
   --text-secondary: light-dark(#4a5563, #a3adba); /* 7.58 / 7.85 */
