@@ -39,15 +39,24 @@ function clientFor(apiKey: string): Anthropic {
  * request content, though, and every branch below folds into the same
  * "provider_unavailable" bucket for the user — so without this, a rate limit,
  * a malformed request and a dropped connection are indistinguishable after
- * the fact. Logging the class name costs nothing a key or a prompt could own.
+ * the fact.
+ *
+ * `error.constructor.name` looked free but is not: a production bundle
+ * minifies class names, so it logs single letters instead of "RateLimitError".
+ * The `instanceof` branch below is what actually identifies the error (it
+ * walks the prototype chain, not a name string), so each branch logs its own
+ * literal label instead — that survives minification. `error.status` is a
+ * plain data property on `APIError` (the real upstream HTTP status, e.g. 429,
+ * or `undefined` for a connection-level failure with no response at all), so
+ * it is included for free and needs no name lookup either.
  */
 function toApiError(error: unknown): ApiError {
-  console.error(
-    "[anthropic] classified error:",
-    error instanceof Error ? error.constructor.name : typeof error,
-  );
+  const status = error instanceof Anthropic.APIError ? error.status : undefined;
+  const classify = (label: string) =>
+    console.error(`[anthropic] classified as ${label}, status=${status}`);
 
   if (error instanceof Anthropic.AuthenticationError) {
+    classify("AuthenticationError");
     return new ApiError(
       "invalid_api_key",
       "Anthropic rejected that key. Check that you copied it in full and that it is still active.",
@@ -55,6 +64,7 @@ function toApiError(error: unknown): ApiError {
   }
 
   if (error instanceof Anthropic.PermissionDeniedError) {
+    classify("PermissionDeniedError");
     return new ApiError(
       "invalid_api_key",
       "That key does not have permission to use the Anthropic API. Check its scopes or your account's billing status.",
@@ -62,6 +72,7 @@ function toApiError(error: unknown): ApiError {
   }
 
   if (error instanceof Anthropic.RateLimitError) {
+    classify("RateLimitError");
     return new ApiError(
       "provider_unavailable",
       "Anthropic is rate limiting this key right now. Wait a moment and try again.",
@@ -69,13 +80,23 @@ function toApiError(error: unknown): ApiError {
   }
 
   if (error instanceof Anthropic.BadRequestError) {
+    classify("BadRequestError");
     return new ApiError(
       "provider_unavailable",
       "Anthropic rejected this request. Try a shorter message or a different model.",
     );
   }
 
+  if (error instanceof Anthropic.APIConnectionTimeoutError) {
+    classify("APIConnectionTimeoutError");
+    return new ApiError(
+      "provider_unavailable",
+      "Could not reach Anthropic. Please try again.",
+    );
+  }
+
   if (error instanceof Anthropic.APIConnectionError) {
+    classify("APIConnectionError");
     return new ApiError(
       "provider_unavailable",
       "Could not reach Anthropic. Please try again.",
@@ -83,12 +104,20 @@ function toApiError(error: unknown): ApiError {
   }
 
   if (error instanceof Anthropic.APIError) {
+    classify("APIError(generic)");
     return new ApiError(
       "provider_unavailable",
       "Anthropic returned an error. Please try again.",
     );
   }
 
+  // `.name` is a fixed string on the prototype (e.g. "TypeError", "AbortError"),
+  // not a reflected class name, so it is stable under minification too. Never
+  // `.message` here: unlike the branches above, this is not an Anthropic
+  // `APIError` with a structured, request-shaped body — it is an arbitrary
+  // thrown value, and an arbitrary message is exactly what the leakage rule
+  // at the top of this function exists to keep out of a log.
+  classify(error instanceof Error ? `non-SDK ${error.name}` : "non-Error throw");
   return new ApiError(
     "provider_unavailable",
     "The model provider could not be reached. Please try again.",
