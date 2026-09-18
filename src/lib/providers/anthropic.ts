@@ -43,15 +43,24 @@ function clientFor(apiKey: string, timeout: number): Anthropic {
 }
 
 /**
+ * Which call produced the error. Matters for exactly one branch below
+ * (`BadRequestError`): `validate` is a bodyless, promptless GET, so neither
+ * the user's message text nor anything content-shaped can appear in the
+ * request Anthropic is complaining about — only the credential can. `chat`
+ * carries a real conversation, where the same HTTP status could just as
+ * easily mean an oversized message or an unsupported model.
+ */
+type ErrorContext = "validate" | "chat";
+
+/**
  * Translates an SDK error into our envelope.
  *
  * `logging without leakage`: the provider's message can echo request content,
  * so we never forward it verbatim. The user gets a sentence they can act on;
  * the detail stays on our side of the boundary. The SDK's error *class* is not
- * request content, though, and every branch below folds into the same
- * "provider_unavailable" bucket for the user — so without this, a rate limit,
- * a malformed request and a dropped connection are indistinguishable after
- * the fact.
+ * request content, though, so each branch below can still log its own label —
+ * without this, a rate limit, a malformed request and a dropped connection
+ * are indistinguishable after the fact.
  *
  * `error.constructor.name` looked free but is not: a production bundle
  * minifies class names, so it logs single letters instead of "RateLimitError".
@@ -61,11 +70,21 @@ function clientFor(apiKey: string, timeout: number): Anthropic {
  * plain data property on `APIError` (the real upstream HTTP status, e.g. 429,
  * or `undefined` for a connection-level failure with no response at all), so
  * it is included for free and needs no name lookup either.
+ *
+ * `error.message` is normally exactly the request content the leakage rule
+ * exists to keep out of a log — except on `validate`, where there is no
+ * content for it to be: Anthropic's own diagnostic text about *why* a
+ * bodyless GET was malformed is safe there in a way it can never be for
+ * `chat`, so it is the one context that logs it.
  */
-function toApiError(error: unknown): ApiError {
+function toApiError(error: unknown, context: ErrorContext): ApiError {
   const status = error instanceof Anthropic.APIError ? error.status : undefined;
+  const detail =
+    context === "validate" && error instanceof Anthropic.APIError
+      ? ` detail=${JSON.stringify(error.message)}`
+      : "";
   const classify = (label: string) =>
-    console.error(`[anthropic] classified as ${label}, status=${status}`);
+    console.error(`[anthropic] classified as ${label}, status=${status}${detail}`);
 
   if (error instanceof Anthropic.AuthenticationError) {
     classify("AuthenticationError");
@@ -93,6 +112,19 @@ function toApiError(error: unknown): ApiError {
 
   if (error instanceof Anthropic.BadRequestError) {
     classify("BadRequestError");
+    if (context === "validate") {
+      // `models.list({ limit: 1 })` has no body and no prompt — the only
+      // thing left in the request for Anthropic to call malformed is the
+      // credential itself. That is a property of this key, not a transient
+      // provider blip, so `provider_unavailable` (implying "try again") would
+      // be actively misleading: retrying the same key fails identically every
+      // time. `invalid_api_key` at least tells the user the retry that will
+      // actually work is pasting a different key.
+      return new ApiError(
+        "invalid_api_key",
+        "Anthropic rejected that key as malformed. Check that you pasted a full API key from console.anthropic.com (not a Claude.ai session or subscription token).",
+      );
+    }
     return new ApiError(
       "provider_unavailable",
       "Anthropic rejected this request. Try a shorter message or a different model.",
@@ -147,7 +179,7 @@ export async function validateApiKey(apiKey: string): Promise<void> {
   try {
     await clientFor(apiKey, VALIDATE_TIMEOUT_MS).models.list({ limit: 1 });
   } catch (error) {
-    throw toApiError(error);
+    throw toApiError(error, "validate");
   }
 }
 
@@ -221,7 +253,7 @@ export async function* streamChat(options: {
     // The client navigating away aborts the stream; that is not an error.
     if (options.signal.aborted) return;
 
-    const apiError = toApiError(error);
+    const apiError = toApiError(error, "chat");
     yield { type: "error", code: apiError.code, message: apiError.message };
   }
 }
