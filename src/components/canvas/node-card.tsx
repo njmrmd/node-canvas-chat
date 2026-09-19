@@ -5,6 +5,7 @@ import type { ConversationNode } from "@/lib/conversation/graph";
 import { presentError } from "@/lib/canvas/errors";
 import { CONTINUE_PROMPT } from "@/lib/canvas/use-canvas-controller";
 import { copy } from "@/lib/canvas/copy";
+import { renderMarkdown } from "@/lib/canvas/markdown";
 
 /** §6 `<NodeCard>`. */
 export const NODE_WIDTH_DESKTOP = 320;
@@ -404,18 +405,30 @@ export function NodeCard(props: NodeCardProps) {
                 ) : null}
               </p>
             ) : (
-              <p
+              <div
                 style={{
                   font: "var(--text-sm)",
                   fontWeight: "var(--weight-assistant-text)",
                   color: "var(--text-primary)",
-                  margin: 0,
-                  whiteSpace: "pre-wrap",
                 }}
               >
-                {node.response}
-                {isStreaming ? <span className="cv-caret" style={{ display: "inline-block", width: 2, height: "1.1em", background: "var(--accent)", verticalAlign: "text-bottom", marginLeft: 1 }} /> : null}
-              </p>
+                {renderMarkdown(
+                  node.response,
+                  isStreaming ? (
+                    <span
+                      className="cv-caret"
+                      style={{
+                        display: "inline-block",
+                        width: 2,
+                        height: "1.1em",
+                        background: "var(--accent)",
+                        verticalAlign: "text-bottom",
+                        marginLeft: 1,
+                      }}
+                    />
+                  ) : undefined,
+                )}
+              </div>
             )}
           </>
         )}

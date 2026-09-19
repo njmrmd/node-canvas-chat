@@ -19,6 +19,7 @@ import { EmptyStateDiagram, StarterChips } from "@/components/canvas/empty-state
 import { ConnectModelCard } from "@/components/canvas/connect-model-card";
 import { LinearView } from "@/components/canvas/linear-view";
 import { ShortcutsSheet } from "@/components/canvas/shortcuts-sheet";
+import { Toast } from "@/components/canvas/toast";
 import { copy } from "@/lib/canvas/copy";
 import {
   childIds,
@@ -674,6 +675,18 @@ export function CanvasApp({
 
   const showRateLimitBanner = rateLimit !== null && rateLimit.remaining <= 0;
 
+  const deleteToastNode = deletedToast ? (
+    <Toast
+      message={
+        deletedToast.count > 0
+          ? copy("delete.undo.subtree", { n: deletedToast.count })
+          : copy("delete.undo")
+      }
+      actionLabel={copy("delete.undo.action")}
+      onAction={controller.undoDelete}
+    />
+  ) : null;
+
   return (
     <main
       className="canvas-surface"
@@ -701,6 +714,7 @@ export function CanvasApp({
         onTidy={controller.tidy}
         zoomPercent={Math.round(viewport.zoom * 100)}
         email={email}
+        isMobile={isMobile}
       />
 
       {!isOnline ? (
@@ -767,13 +781,31 @@ export function CanvasApp({
             }}
           >
             {isRootsEmpty ? (
-              <EmptyCanvasContent
-                hasProvider={hasProvider}
-                starterDraft={starterDraft}
-                onPickStarter={setStarterDraft}
-                onSend={controller.send}
-                composerRef={composerRef}
-              />
+              <>
+                <EmptyCanvasContent
+                  hasProvider={hasProvider}
+                  starterDraft={starterDraft}
+                  onPickStarter={setStarterDraft}
+                  onSend={controller.send}
+                  composerRef={composerRef}
+                />
+                {/* Reachable only by deleting the last remaining root — the
+                 * canvas goes straight from one node to `canvas.empty`, and
+                 * the undo path has to survive that transition too. */}
+                {deleteToastNode ? (
+                  <div
+                    style={{
+                      position: "absolute",
+                      left: "50%",
+                      bottom: "var(--space-5)",
+                      transform: "translateX(-50%)",
+                      zIndex: "var(--z-toast)",
+                    }}
+                  >
+                    {deleteToastNode}
+                  </div>
+                ) : null}
+              </>
             ) : (
               <>
                 <svg
@@ -883,12 +915,17 @@ export function CanvasApp({
                   transform: "translateX(-50%)",
                   width: "100%",
                   display: "flex",
-                  justifyContent: "center",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: "var(--space-3)",
                   padding: "0 var(--space-4)",
                   zIndex: "var(--z-composer)",
                   pointerEvents: "none",
                 }}
               >
+                {deleteToastNode ? (
+                  <div style={{ pointerEvents: "auto", zIndex: "var(--z-toast)" }}>{deleteToastNode}</div>
+                ) : null}
                 <div style={{ pointerEvents: "auto", width: "100%", maxWidth: 640 }}>
                   {hasProvider ? (
                     <Composer

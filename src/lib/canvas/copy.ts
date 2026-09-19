@@ -42,9 +42,11 @@ const SPEC_9 = {
   "node.action.retry": "Retry",
   "node.action.branch": "Branch",
   "node.continuedFrom": "continued from above",
-  "delete.confirm": "Delete this node and {n} below it?",
-  "delete.confirm.single": "Delete this node?",
   "delete.undo": "Node deleted.",
+  /* §1.5's confirm dialog is retired (TES-46 ruling: immediate delete + undo
+   * toast, no blocking dialog) — this is the only place a subtree's count
+   * still surfaces, so it carries what the dialog used to say. */
+  "delete.undo.subtree": "Node and {n} below it deleted.",
   "limit.chip": "{used} / {total} today",
   "limit.banner":
     "You've used your {total} messages for today. Resets in {time}.",
@@ -92,12 +94,15 @@ const SPEC_ELSEWHERE = {
 } as const;
 
 /**
- * Strings the build needs that §9 does not name at all — not a transcription,
- * because there is nothing to transcribe. Placeholder text, not final copy;
- * flagged to Design Engineer in the same breath as this file's existing gap
- * list below rather than treated as settled.
+ * Strings §9 does not name, approved as final copy on the TES-46 review
+ * rather than transcribed from the spec document itself — the review is the
+ * source for these, not §9's table, so they stay out of `SPEC_9` to keep that
+ * object's "every string here is verbatim in the spec" invariant honest.
+ * Shipped first as placeholders pending exactly this sign-off; see this
+ * file's git history for the placeholder-vs-approved distinction while it
+ * was open.
  */
-const LOCAL_PLACEHOLDERS = {
+const REVIEW_APPROVED = {
   /* §6 `<LinearView>` — heading and the Copy-all action. */
   "linearview.heading": "Linear view",
   "linearview.copyAll": "Copy all",
@@ -111,13 +116,11 @@ const LOCAL_PLACEHOLDERS = {
   /* §4.11 past the 5000ms load budget. */
   "canvas.loadError": "Taking longer than expected.",
   "canvas.loadRetry": "Retry",
-  /* §4.6 delete: the spec's confirm-dialog copy, reused as the undo toast's
-   * body — see the `delete` implementation note in `use-canvas-controller.ts`
-   * for why this ships as an undo toast rather than a blocking dialog. */
+  /* §6 `<Toast>`'s Undo action. */
   "delete.undo.action": "Undo",
 } as const;
 
-export const COPY = { ...SPEC_9, ...SPEC_ELSEWHERE, ...LOCAL_PLACEHOLDERS } as const;
+export const COPY = { ...SPEC_9, ...SPEC_ELSEWHERE, ...REVIEW_APPROVED } as const;
 
 export type CopyKey = keyof typeof COPY;
 
@@ -184,12 +187,9 @@ export function copy<K extends CopyKey>(
  * a blank to fill in. Listed here because a comment in the file that needs them
  * is where someone will actually look.
  *
- * - **Top bar controls (§6 `<TopBar>`):** labels for `Tidy`, the focus-path
- *   toggle, the theme toggle and the account menu. §2.4 and §7.2 call the first
- *   one "Tidy" in prose; the others are unnamed.
- * - **`<LinearView>` (§6):** panel heading and the "Copy-all" button label.
- * - **`<ShortcutsSheet>` (§6):** its title and the label for every row in the
- *   §7.2 key tables.
+ * - **Top bar controls (§6 `<TopBar>`):** the theme toggle and the account
+ *   menu are still unnamed. `Tidy` and the focus-path toggle (`focuspath.toggle`)
+ *   are resolved, per the TES-46 review.
  * - **Screen-reader strings (§7.3):** the announcement templates are given as
  *   examples in prose — *"Node 4, branch 2 of 3, assistant reply complete, 1
  *   branch below."* — rather than as keyed templates with placeholders. They

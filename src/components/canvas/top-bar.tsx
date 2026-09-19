@@ -16,6 +16,7 @@ export type TopBarProps = {
   onTidy: () => void;
   zoomPercent: number;
   email: string;
+  isMobile: boolean;
 };
 
 function usageTone(percentUsed: number): string {
@@ -49,13 +50,18 @@ export function TopBar(props: TopBarProps) {
       {/*
        * §6.1 specs a distinct 48px mobile top bar (wordmark, usage chip,
        * overflow menu; model selector moves into the overflow) that this
-       * component does not yet build — flagged to Design Engineer as a
-       * follow-up rather than approximated here. This truncation is the
-       * narrower fix: at 390px the four siblings after the wordmark already
-       * do not fit, and a flex child needs an explicit `minWidth: 0` to be
-       * allowed to shrink below its text's natural width at all — without it
-       * the wordmark wraps to three lines and blows out the fixed 56px
-       * height instead of eliding.
+       * component does not yet build — tracked on TES-45 as the real fix.
+       *
+       * TES-46 found the interim version actively wrong, not just
+       * incomplete: `minWidth: 0` plus `text-overflow: ellipsis` only draws
+       * dots if there is *some* width left to draw them in, and at 390px
+       * the model `<select>` alone (a form control, which browsers resist
+       * shrinking below its longest option's content width) was consuming
+       * enough of the row that the wordmark had zero width left — not
+       * truncated, gone. Hiding the model selector below the mobile
+       * breakpoint is the one line worth pulling out of the full mobile
+       * redesign now, because it is what was actually starving the
+       * wordmark and email of the width `minWidth: 0` needs to work at all.
        */}
       <span
         style={{
@@ -108,7 +114,7 @@ export function TopBar(props: TopBarProps) {
         </div>
       ) : null}
 
-      {props.showCanvasControls && props.models.length > 1 ? (
+      {!props.isMobile && props.showCanvasControls && props.models.length > 1 ? (
         <select
           value={props.model}
           onChange={(event) => props.onModelChange(event.target.value)}
@@ -189,7 +195,7 @@ export function TopBar(props: TopBarProps) {
           font: "var(--text-xs)",
           color: "var(--text-tertiary)",
           minWidth: 0,
-          maxWidth: 160,
+          maxWidth: props.isMobile ? 96 : 160,
           overflow: "hidden",
           textOverflow: "ellipsis",
           whiteSpace: "nowrap",
