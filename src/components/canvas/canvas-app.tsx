@@ -49,6 +49,13 @@ const DENSE_GRAPH_THRESHOLD = 12;
 /** §2.4 auto-follow suppression window, and the same window this reuses for
  * "don't fight a keyboard-driven pan either". */
 const RECENT_USER_VIEWPORT_CHANGE_MS = 2000;
+/** §6.1: a touch-and-hold on a node this long enters drag mode; shorter than
+ * this, the same gesture is a pan. Mouse/pen skip the gate entirely — a
+ * short drag there is unambiguously a drag, not a pan attempt. */
+const LONG_PRESS_MS = 400;
+/** Movement past this many px cancels a pending long-press — the finger is
+ * panning, not holding still. Also the click-vs-drag tolerance below. */
+const TAP_MOVE_TOLERANCE_PX = 4;
 const MOBILE_QUERY = "(max-width: 767px)";
 
 function subscribeMobile(callback: () => void): () => void {
@@ -150,6 +157,10 @@ export function CanvasApp({
     startClientX: number;
     startClientY: number;
     startViewport: Viewport;
+    // A pan that started over a card is a pending touch drag (§6.1) rather
+    // than a background click — the pan-that-never-moved deselect below
+    // must not fire for it.
+    overCard: boolean;
   } | null>(null);
   const dragRef = useRef<{
     nodeId: string;
@@ -157,6 +168,14 @@ export function CanvasApp({
     startClientX: number;
     startClientY: number;
     startPos: { x: number; y: number };
+  } | null>(null);
+  /** Pending touch long-press: set on touch-down over a node, cleared by
+   * movement past tolerance, pointer-up, or by firing into `dragRef`. */
+  const longPressRef = useRef<{
+    pointerId: number;
+    startClientX: number;
+    startClientY: number;
+    timer: ReturnType<typeof setTimeout>;
   } | null>(null);
   const knownNodeIdsRef = useRef<Set<string>>(new Set());
   const didInitialFitRef = useRef(false);
@@ -261,6 +280,19 @@ export function CanvasApp({
 
   useEffect(() => {
     const onMove = (event: PointerEvent) => {
+      // A held-but-not-yet-long-pressed touch on a node is already panning
+      // (below); real movement means it's a pan, not a hold, so the pending
+      // drag-entry never fires.
+      const longPress = longPressRef.current;
+      if (longPress && longPress.pointerId === event.pointerId) {
+        const moved =
+          Math.abs(event.clientX - longPress.startClientX) > TAP_MOVE_TOLERANCE_PX ||
+          Math.abs(event.clientY - longPress.startClientY) > TAP_MOVE_TOLERANCE_PX;
+        if (moved) {
+          clearTimeout(longPress.timer);
+          longPressRef.current = null;
+        }
+      }
       const pan = panRef.current;
       if (pan && pan.pointerId === event.pointerId) {
         lastUserViewportChangeRef.current = Date.now();
@@ -285,6 +317,10 @@ export function CanvasApp({
     const onUp = (event: PointerEvent) => {
       if (panRef.current?.pointerId === event.pointerId) panRef.current = null;
       if (dragRef.current?.pointerId === event.pointerId) dragRef.current = null;
+      if (longPressRef.current?.pointerId === event.pointerId) {
+        clearTimeout(longPressRef.current.timer);
+        longPressRef.current = null;
+      }
     };
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
@@ -293,6 +329,7 @@ export function CanvasApp({
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onUp);
+      if (longPressRef.current) clearTimeout(longPressRef.current.timer);
     };
   }, [controller, setViewport]);
 
@@ -308,15 +345,17 @@ export function CanvasApp({
       startClientX: event.clientX,
       startClientY: event.clientY,
       startViewport: viewportRef.current,
+      overCard: false,
     };
   };
 
   const handleSurfacePointerUp = (event: React.PointerEvent) => {
     const pan = panRef.current;
     if (!pan || pan.pointerId !== event.pointerId) return;
+    if (pan.overCard) return; // §6.1 pending touch drag — its own gesture, not a background click
     const moved =
-      Math.abs(event.clientX - pan.startClientX) > 4 ||
-      Math.abs(event.clientY - pan.startClientY) > 4;
+      Math.abs(event.clientX - pan.startClientX) > TAP_MOVE_TOLERANCE_PX ||
+      Math.abs(event.clientY - pan.startClientY) > TAP_MOVE_TOLERANCE_PX;
     // A pan that never moved is a click on empty canvas: deselect, and the
     // composer rebinds to the most recent leaf (§2.2).
     if (!moved) controller.select(null);
@@ -351,13 +390,52 @@ export function CanvasApp({
       if (event.button !== 0 || spaceHeldRef.current) return; // let it bubble to pan
       const node = graphRef.current.nodesById[nodeId];
       if (!node) return;
+      const pointerId = event.pointerId;
+      const startClientX = event.clientX;
+      const startClientY = event.clientY;
+      (event.currentTarget as Element).setPointerCapture(pointerId);
+
+      if (event.pointerType === "touch") {
+        // §6.1: touch has no hover to disambiguate "reach for the canvas" from
+        // "reach for this node", so a bare touch drag pans like it would
+        // anywhere else on the surface. Only a held long-press promotes it to
+        // a node drag — see the `onMove`/`onUp` window listeners above for the
+        // cancel-on-movement and cancel-on-release paths.
+        panRef.current = {
+          pointerId,
+          startClientX,
+          startClientY,
+          startViewport: viewportRef.current,
+          overCard: true,
+        };
+        longPressRef.current = {
+          pointerId,
+          startClientX,
+          startClientY,
+          timer: setTimeout(() => {
+            if (longPressRef.current?.pointerId !== pointerId) return;
+            longPressRef.current = null;
+            panRef.current = null;
+            controller.select(nodeId);
+            if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate(10);
+            dragRef.current = {
+              nodeId,
+              pointerId,
+              startClientX,
+              startClientY,
+              startPos: node.position,
+            };
+          }, LONG_PRESS_MS),
+        };
+        return;
+      }
+
       controller.select(nodeId);
-      (event.currentTarget as Element).setPointerCapture(event.pointerId);
       dragRef.current = {
         nodeId,
-        pointerId: event.pointerId,
-        startClientX: event.clientX,
-        startClientY: event.clientY,
+        pointerId,
+        startClientX,
+        startClientY,
         startPos: node.position,
       };
     },
