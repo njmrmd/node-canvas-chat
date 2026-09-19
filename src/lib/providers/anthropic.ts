@@ -34,11 +34,24 @@ const MAX_TOKENS = 32_000;
 const CHAT_TIMEOUT_MS = 120_000;
 const VALIDATE_TIMEOUT_MS = 20_000;
 
+/**
+ * TES-59: three real sends hung with zero bytes for the client's full 60s
+ * patience window, and the request logged nothing on our side either way —
+ * the SDK call was still in flight when the client gave up and aborted it,
+ * so our own try/catch never ran. `logLevel: "info"` closes that gap: at
+ * `info` the SDK logs per-attempt status/timing and *that* a retry happened
+ * (elevated load, a dropped connection), never headers or body — `debug` is
+ * the level that would start attaching request/response details, which is
+ * exactly the request content `logging without leakage` exists to keep out.
+ * `info` on a hang that never resolves is still enough to tell "one slow
+ * attempt" from "silently retried more than once" the next time this fires.
+ */
 function clientFor(apiKey: string, timeout: number): Anthropic {
   return new Anthropic({
     apiKey,
     timeout,
     maxRetries: 1,
+    logLevel: "info",
   });
 }
 
@@ -218,6 +231,8 @@ export async function* streamChat(options: {
   signal: AbortSignal;
 }): AsyncGenerator<ChatStreamEvent> {
   const thinking = buildThinkingParam(options.supportsAdaptiveThinking);
+  const startedAt = Date.now();
+  let sawAnyDelta = false;
   const stream = clientFor(options.apiKey, CHAT_TIMEOUT_MS).messages.stream(
     {
       model: options.model,
@@ -235,6 +250,7 @@ export async function* streamChat(options: {
   try {
     for await (const event of stream) {
       if (event.type !== "content_block_delta") continue;
+      sawAnyDelta = true;
 
       if (event.delta.type === "text_delta") {
         yield { type: "text", text: event.delta.text };
@@ -268,7 +284,19 @@ export async function* streamChat(options: {
     };
   } catch (error) {
     // The client navigating away aborts the stream; that is not an error.
-    if (options.signal.aborted) return;
+    // TES-59: it is also what the client's own first-token watchdog does —
+    // silently, from the client's side — so without this log an aborted
+    // request that Anthropic was still working on is indistinguishable from
+    // one that finished cleanly. `sawAnyDelta`/elapsed time is the minimum
+    // needed to tell "provider never produced a byte" from "produced some,
+    // just not fast enough" the next time this fires; neither value is
+    // request content.
+    if (options.signal.aborted) {
+      console.info(
+        `[anthropic] chat aborted after ${Date.now() - startedAt}ms, sawAnyDelta=${sawAnyDelta}`,
+      );
+      return;
+    }
 
     const apiError = toApiError(error, "chat");
     yield { type: "error", code: apiError.code, message: apiError.message };
