@@ -133,6 +133,7 @@ export const POST = withRoute("chat", async (request: Request) => {
         for await (const event of streamChat({
           apiKey,
           model: model.id,
+          supportsAdaptiveThinking: model.supportsAdaptiveThinking,
           system,
           messages,
           signal: controller.signal,

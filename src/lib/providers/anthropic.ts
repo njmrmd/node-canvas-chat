@@ -184,28 +184,45 @@ export async function validateApiKey(apiKey: string): Promise<void> {
 }
 
 /**
+ * Haiku 4.5 rejects `thinking: { type: "adaptive" }` outright (400) — it only
+ * takes the older `budget_tokens` form or no `thinking` param. Returning
+ * `undefined` for it means the request omits `thinking` entirely, which is a
+ * supported no-thinking call rather than an error.
+ */
+export function buildThinkingParam(
+  supportsAdaptiveThinking: boolean,
+): { type: "adaptive"; display: "summarized" } | undefined {
+  return supportsAdaptiveThinking
+    ? { type: "adaptive", display: "summarized" }
+    : undefined;
+}
+
+/**
  * Streams a completion, yielding our own transport-neutral events rather than
  * the SDK's. The route turns these into SSE frames — nothing provider-shaped
  * reaches the client, so swapping or adding a provider does not change the
  * client contract.
  *
- * Adaptive thinking with `display: "summarized"` is on deliberately. On Opus 5
- * thinking runs by default, and with the default omitted display the user
- * would watch a long pause with nothing on screen. Surfacing the summary gives
- * the canvas something real to render while the model works.
+ * Adaptive thinking with `display: "summarized"` is on deliberately, for every
+ * model that accepts it. On Opus 5 thinking runs by default, and with the
+ * default omitted display the user would watch a long pause with nothing on
+ * screen. Surfacing the summary gives the canvas something real to render
+ * while the model works.
  */
 export async function* streamChat(options: {
   apiKey: string;
   model: string;
+  supportsAdaptiveThinking: boolean;
   system?: string;
   messages: ChatMessage[];
   signal: AbortSignal;
 }): AsyncGenerator<ChatStreamEvent> {
+  const thinking = buildThinkingParam(options.supportsAdaptiveThinking);
   const stream = clientFor(options.apiKey, CHAT_TIMEOUT_MS).messages.stream(
     {
       model: options.model,
       max_tokens: MAX_TOKENS,
-      thinking: { type: "adaptive", display: "summarized" },
+      ...(thinking ? { thinking } : {}),
       ...(options.system ? { system: options.system } : {}),
       messages: options.messages.map((message) => ({
         role: message.role,

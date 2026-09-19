@@ -19,6 +19,12 @@ export type ModelSpec = {
   id: string;
   label: string;
   description: string;
+  /**
+   * Whether this model accepts `thinking: { type: "adaptive" }`. Haiku 4.5
+   * does not — it still takes the older `budget_tokens` form or no `thinking`
+   * param at all — and sending `adaptive` to it is a 400, not a fallback.
+   */
+  supportsAdaptiveThinking: boolean;
 };
 
 export type ProviderSpec = {
@@ -44,16 +50,19 @@ export const PROVIDERS: Record<ProviderId, ProviderSpec> = {
         id: "claude-opus-5",
         label: "Claude Opus 5",
         description: "Most capable. The default.",
+        supportsAdaptiveThinking: true,
       },
       {
         id: "claude-sonnet-5",
         label: "Claude Sonnet 5",
         description: "Faster and cheaper, still strong.",
+        supportsAdaptiveThinking: true,
       },
       {
         id: "claude-haiku-4-5",
         label: "Claude Haiku 4.5",
         description: "Fastest. Good for short branches.",
+        supportsAdaptiveThinking: false,
       },
     ],
   },
