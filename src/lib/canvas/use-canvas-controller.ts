@@ -61,8 +61,16 @@ export const CONTINUE_PROMPT = "Continue from where you left off.";
  * data-model rule (can `toMessages` be built at all).
  */
 export function canBranchNow(node: ConversationNode): boolean {
-  if (node.status === "complete" || node.status === "interrupted") return true;
-  if (node.status === "error") return node.response.trim() !== "";
+  if (node.status === "complete") return true;
+  // A stopped or dropped stream can still have kept partial text worth
+  // replying to (see `interruptNode`'s own comment) — but one that was cut
+  // off before any content arrived has nothing for `toMessages` to send,
+  // same as an empty error. Enabling the composer here let `addNode` reject
+  // the send after the fact with `canBranchFrom`'s stricter check, which
+  // is exactly the silent, uncaught throw TES-58 traced this to.
+  if (node.status === "interrupted" || node.status === "error") {
+    return node.response.trim() !== "";
+  }
   return false;
 }
 
