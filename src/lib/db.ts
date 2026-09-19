@@ -37,6 +37,20 @@ function getPool(): Pool {
       max: 1,
       idleTimeoutMillis: 30_000,
       connectionTimeoutMillis: 10_000,
+      // TES-62: `/api/chat` runs `getSessionUser` → `enforce` (rate limit) →
+      // `getDecryptedKey` before it ever calls a provider, and none of the
+      // three logs anything until it throws. Without a bound here, a stalled
+      // query — Neon waking from scale-to-zero, a lock held by a concurrent
+      // request — is a silent `await` with no ceiling but the route's own
+      // 300s `maxDuration`, which looks identical to the client's own 60s
+      // watchdog firing on a provider hang: zero bytes, nothing in the logs.
+      // `statement_timeout` asks Postgres itself to give up server-side;
+      // `query_timeout` is the client-side backstop for a server that never
+      // answers at all. Either one turns that silent hang into a thrown
+      // error `withRoute` logs and turns into a fast, legible `internal_error`
+      // instead of eating the request's full patience window. `fail closed`.
+      statement_timeout: 10_000,
+      query_timeout: 10_000,
       // Managed Postgres terminates TLS with a certificate we do not pin; the
       // connection string's sslmode governs. This keeps `pg` from rejecting
       // Neon's chain while still requiring TLS via the URL.
