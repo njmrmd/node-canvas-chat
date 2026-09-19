@@ -102,6 +102,13 @@ export function Composer(props: ComposerProps) {
             submit();
           }
           if (event.key === "Escape") {
+            // Otherwise this bubbles to the canvas surface's own Escape
+            // handler, which reads the *just-focused* node (the one
+            // `onEscape` below returns focus to) and, if it happens to be
+            // streaming, stops it — turning "leave the composer" into a
+            // silent, unintended cancel of the response the user just asked
+            // for. §7.2 only promises the former.
+            event.stopPropagation();
             (event.target as HTMLTextAreaElement).blur();
             props.onEscape?.();
           }
