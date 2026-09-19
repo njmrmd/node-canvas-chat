@@ -230,6 +230,37 @@ describe("streamChat", () => {
     assert.deepEqual(events, [{ type: "text", text: "partial" }]);
   });
 
+  it("surfaces a spurious AbortError as a legible error, not a silent stop", async () => {
+    // The browser can throw an AbortError-named exception (tab throttling, the
+    // browser evicting the request) with no controller of ours ever aborted.
+    // That must not be read as the user pressing stop.
+    const controller = new AbortController();
+    const body = new ReadableStream<Uint8Array>({
+      pull() {
+        throw Object.assign(new Error("spurious"), { name: "AbortError" });
+      },
+    });
+
+    stubFetch(new Response(body, { status: 200 }));
+
+    const events: ChatStreamEvent[] = [];
+    await assert.rejects(
+      streamChat({
+        ...REQUEST,
+        signal: controller.signal,
+        onEvent: (event) => events.push(event),
+      }),
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.equal((error as Error).name, "AbortError");
+        return true;
+      },
+    );
+
+    assert.equal(controller.signal.aborted, false);
+    assert.deepEqual(events, []);
+  });
+
   it("ignores a malformed frame instead of tearing the stream down", async () => {
     const { events, result } = await collect(
       sseResponse([

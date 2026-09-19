@@ -76,8 +76,8 @@ export async function streamChat(
         ...(request.system ? { system: request.system } : {}),
       }),
     });
-  } catch (error) {
-    if (isAbort(error, signal)) return { completed: false };
+  } catch {
+    if (signal?.aborted) return { completed: false };
     throw new ApiCallError(
       "internal_error",
       "Could not reach the server. Check your connection and try again.",
@@ -129,7 +129,11 @@ export async function streamChat(
       }
     }
   } catch (error) {
-    if (isAbort(error, signal)) return { completed: false };
+    // Checking the error's name here would also catch AbortErrors the browser
+    // throws for reasons that have nothing to do with our controller (tab
+    // throttling, the browser evicting the request) and misread them as the
+    // user stopping it.
+    if (signal?.aborted) return { completed: false };
     throw error;
   } finally {
     // Releasing matters on the abort path: the body is still open otherwise.
@@ -191,9 +195,4 @@ async function toApiCallError(response: Response): Promise<ApiCallError> {
     body?.error?.fields ?? {},
     Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : undefined,
   );
-}
-
-function isAbort(error: unknown, signal?: AbortSignal): boolean {
-  if (signal?.aborted) return true;
-  return error instanceof Error && error.name === "AbortError";
 }
