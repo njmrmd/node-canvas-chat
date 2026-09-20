@@ -57,7 +57,7 @@ export function Composer(props: ComposerProps) {
         border: "1px solid var(--border-default)",
         borderRadius: "var(--radius-xl)",
         boxShadow: isCentered ? "var(--shadow-2)" : "var(--shadow-3)",
-        padding: "var(--space-3)",
+        padding: "var(--space-4)",
         opacity: props.disabled ? 0.5 : 1,
         pointerEvents: props.disabled ? "none" : undefined,
       }}
@@ -97,9 +97,15 @@ export function Composer(props: ComposerProps) {
         disabled={props.disabled}
         onChange={(event) => setValue(event.target.value)}
         onKeyDown={(event) => {
-          if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+          if (event.key === "Enter" && !event.shiftKey) {
+            // Cmd/Ctrl+Enter also lands here — it never carries shiftKey — so
+            // the old chord keeps working without a separate check. Guard
+            // IME composition: confirming a candidate (Japanese/Chinese/
+            // Korean input) fires a plain Enter keydown that must not submit.
+            if (event.nativeEvent.isComposing || event.keyCode === 229) return;
             event.preventDefault();
             submit();
+            return;
           }
           if (event.key === "Escape") {
             // Otherwise this bubbles to the canvas surface's own Escape
@@ -132,7 +138,7 @@ export function Composer(props: ComposerProps) {
         }}
       />
 
-      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "var(--space-2)" }}>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "var(--space-3)" }}>
         <button
           type="button"
           aria-label="Send"
@@ -141,13 +147,20 @@ export function Composer(props: ComposerProps) {
           style={{
             width: 40,
             height: 40,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
             borderRadius: "var(--radius-full)",
             background: "var(--accent)",
             color: "var(--accent-fg)",
             opacity: value.trim() === "" ? 0.4 : 1,
           }}
         >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          {/* The path's bounding box (4,3)-(12,13) is already geometric
+              centre, but the chevron packs far more stroke into its 4px
+              band than the single-line shaft below it, so the glyph reads
+              top-heavy. Nudge down a hair to correct the optical centre. */}
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true" style={{ transform: "translateY(0.5px)" }}>
             <path d="M8 13V3M8 3 4 7M8 3l4 4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </button>

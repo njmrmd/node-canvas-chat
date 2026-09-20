@@ -12,7 +12,7 @@ import { copy } from "@/lib/canvas/copy";
 const ROWS: Array<[string, string]> = [
   ["↑ / ↓ / ← / →", "Move focus to parent / first child / sibling"],
   ["Home / End", "Focus root / most recent leaf"],
-  ["Enter", "Focus the composer, bound to the focused node"],
+  ["Enter (node focused)", "Focus the composer, bound to the focused node"],
   ["B", "Branch from focused node"],
   ["R", "Regenerate focused node"],
   ["C", "Collapse / expand focused node's subtree"],
@@ -20,7 +20,7 @@ const ROWS: Array<[string, string]> = [
   ["Cmd/Ctrl + Alt + arrows", "Resize focused node"],
   ["Delete / Backspace", "Delete focused node + subtree"],
   ["Esc", "Stop generation (node focused, streaming)"],
-  ["Cmd/Ctrl + Enter", "Send"],
+  ["Enter (in composer)", "Send (Shift + Enter for a new line)"],
   ["Cmd/Ctrl + Z", "Undo last delete"],
   ["+ / −", "Zoom in / out"],
   ["0", "Zoom to fit"],
