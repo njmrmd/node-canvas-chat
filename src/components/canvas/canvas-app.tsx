@@ -955,8 +955,18 @@ export function CanvasApp({
                       return (
                         <Edge
                           key={id}
-                          from={{ x: parent.position.x + nodeWidth / 2, y: parent.position.y + NODE_HEIGHT }}
-                          to={{ x: node.position.x + nodeWidth / 2, y: node.position.y }}
+                          from={{
+                            x: parent.position.x,
+                            y: parent.position.y,
+                            width: nodeWidth,
+                            height: nodeHeightsRef.current.get(parent.id) ?? NODE_HEIGHT,
+                          }}
+                          to={{
+                            x: node.position.x,
+                            y: node.position.y,
+                            width: nodeWidth,
+                            height: nodeHeightsRef.current.get(node.id) ?? NODE_HEIGHT,
+                          }}
                           state={state}
                         />
                       );
