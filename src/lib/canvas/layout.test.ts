@@ -7,11 +7,18 @@ import {
   moveNode,
   type ConversationGraph,
 } from "@/lib/conversation/graph";
-import { NODE_WIDTH_DESKTOP, autoPlaceOnCreate, tidyLayout, type NodeHeights } from "./layout";
+import {
+  NODE_WIDTH_DESKTOP,
+  autoPlaceOnCreate,
+  tidyLayout,
+  type NodeHeights,
+  type NodeWidths,
+} from "./layout";
 
 const ORIGIN = { x: 0, y: 0 };
 const WIDTH = NODE_WIDTH_DESKTOP;
 const FALLBACK_HEIGHT = 160;
+const NO_WIDTHS: NodeWidths = new Map();
 
 /** Adds a node and immediately gives it an answer, so a later test step can
  * hang a child off it — `addNode` refuses to branch from an empty response. */
@@ -23,11 +30,17 @@ function addAnswered(graph: ConversationGraph, id: string, parentId: string | nu
 function rectFor(
   graph: ConversationGraph,
   nodeId: string,
-  width: number,
+  defaultWidth: number,
   heights: NodeHeights,
+  widths: NodeWidths = NO_WIDTHS,
 ): { x: number; y: number; width: number; height: number } {
   const { position } = graph.nodesById[nodeId];
-  return { x: position.x, y: position.y, width, height: heights.get(nodeId) ?? FALLBACK_HEIGHT };
+  return {
+    x: position.x,
+    y: position.y,
+    width: widths.get(nodeId) ?? defaultWidth,
+    height: heights.get(nodeId) ?? FALLBACK_HEIGHT,
+  };
 }
 
 function rectsOverlap(
@@ -38,12 +51,17 @@ function rectsOverlap(
 }
 
 /** The real regression guard: every card's rect, brute-forced pairwise. */
-function assertNoOverlaps(graph: ConversationGraph, width: number, heights: NodeHeights = new Map()): void {
+function assertNoOverlaps(
+  graph: ConversationGraph,
+  width: number,
+  heights: NodeHeights = new Map(),
+  widths: NodeWidths = NO_WIDTHS,
+): void {
   const ids = graph.nodeIds;
   for (let i = 0; i < ids.length; i++) {
     for (let j = i + 1; j < ids.length; j++) {
-      const a = rectFor(graph, ids[i], width, heights);
-      const b = rectFor(graph, ids[j], width, heights);
+      const a = rectFor(graph, ids[i], width, heights, widths);
+      const b = rectFor(graph, ids[j], width, heights, widths);
       assert.equal(rectsOverlap(a, b), false, `${ids[i]} overlaps ${ids[j]}`);
     }
   }
@@ -116,6 +134,50 @@ describe("tidyLayout", () => {
     const tidied = tidyLayout(graph, WIDTH);
     assertNoOverlaps(tidied, WIDTH);
   });
+
+  it("TES-90: keeps every card non-overlapping when one has been manually widened", () => {
+    // A resized card is wider than `NODE_WIDTH_DESKTOP` in both directions it
+    // matters for: it must not swallow its siblings horizontally, and its
+    // parent must not center on top of it.
+    let graph = createGraph();
+    graph = addAnswered(graph, "root", null);
+    graph = addAnswered(graph, "wide", "root");
+    graph = addAnswered(graph, "narrow", "root");
+    graph = addAnswered(graph, "wideChild", "wide");
+
+    const heights: NodeHeights = new Map([
+      ["root", 180],
+      ["wide", 200],
+      ["narrow", 150],
+      ["wideChild", 160],
+    ]);
+    const widths: NodeWidths = new Map([["wide", 600]]);
+
+    const tidied = tidyLayout(graph, WIDTH, heights, widths);
+    assertNoOverlaps(tidied, WIDTH, heights, widths);
+  });
+
+  it("TES-90: keeps every card non-overlapping when one has been collapsed to a one-line height", () => {
+    // A body-collapsed card renders at a fraction of its normal height
+    // (measured, same as any other height, via `NodeHeights`) — the overlap
+    // guard has to hold with a real card that short sitting next to normal
+    // ones, not just with uniformly-sized cards.
+    let graph = createGraph();
+    graph = addAnswered(graph, "root", null);
+    graph = addAnswered(graph, "collapsed", "root");
+    graph = addAnswered(graph, "normal", "root");
+    graph = addAnswered(graph, "collapsedChild", "collapsed");
+
+    const heights: NodeHeights = new Map([
+      ["root", 160],
+      ["collapsed", 48],
+      ["normal", 220],
+      ["collapsedChild", 160],
+    ]);
+
+    const tidied = tidyLayout(graph, WIDTH, heights);
+    assertNoOverlaps(tidied, WIDTH, heights);
+  });
 });
 
 describe("autoPlaceOnCreate", () => {
@@ -174,5 +236,42 @@ describe("autoPlaceOnCreate", () => {
       false,
       "the two children must not overlap each other",
     );
+  });
+
+  it("TES-90: does not overlap a manually-widened parent when placing a new child below it", () => {
+    let graph = createGraph();
+    graph = addAnswered(graph, "root", null);
+
+    const widths: NodeWidths = new Map([["wide", 600]]);
+
+    const widePosition = autoPlaceOnCreate(graph, "root", WIDTH, new Map(), widths);
+    const { graph: withWide } = addNode(graph, { id: "wide", parentId: "root", prompt: "hi", position: widePosition });
+    graph = appendText(withWide, "wide", "answer");
+
+    const childPosition = autoPlaceOnCreate(graph, "wide", WIDTH, new Map(), widths);
+    const { graph: withChild } = addNode(graph, { id: "child", parentId: "wide", prompt: "hi", position: childPosition });
+
+    assertNoOverlaps(withChild, WIDTH, new Map(), widths);
+  });
+
+  it("TES-90: a second sibling lands clear of a manually-widened first sibling", () => {
+    let graph = createGraph();
+    graph = addAnswered(graph, "root", null);
+
+    const widths: NodeWidths = new Map([["wide", 600]]);
+
+    const widePosition = autoPlaceOnCreate(graph, "root", WIDTH, new Map(), widths);
+    const { graph: withWide } = addNode(graph, { id: "wide", parentId: "root", prompt: "hi", position: widePosition });
+    graph = appendText(withWide, "wide", "answer");
+
+    const siblingPosition = autoPlaceOnCreate(graph, "root", WIDTH, new Map(), widths);
+    const { graph: withSibling } = addNode(graph, {
+      id: "sibling",
+      parentId: "root",
+      prompt: "hi",
+      position: siblingPosition,
+    });
+
+    assertNoOverlaps(withSibling, WIDTH, new Map(), widths);
   });
 });

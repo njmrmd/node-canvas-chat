@@ -39,7 +39,15 @@ import {
   ZOOM_STEP_FACTOR,
   type Viewport,
 } from "@/lib/canvas/viewport";
-import { graphBounds, NODE_WIDTH_DESKTOP, NODE_WIDTH_MOBILE } from "@/lib/canvas/layout";
+import {
+  graphBounds,
+  NODE_HEIGHT_MAX,
+  NODE_HEIGHT_MIN,
+  NODE_WIDTH_DESKTOP,
+  NODE_WIDTH_MAX,
+  NODE_WIDTH_MIN,
+  NODE_WIDTH_MOBILE,
+} from "@/lib/canvas/layout";
 import { routeWheelEvent } from "@/lib/canvas/wheel-routing";
 import type { ModelSpec } from "@/lib/providers/registry";
 
@@ -82,6 +90,16 @@ const CHROME_SELECTOR = '[data-canvas-role="chrome"]';
 
 function isOverCanvasChrome(target: EventTarget | null): boolean {
   return target instanceof Element && target.closest(CHROME_SELECTOR) !== null;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+/** TES-90: a card's real, effective width/height right now — its own
+ * resized `size` if it has one, otherwise the viewport default / auto. */
+function effectiveWidth(node: { size: { width: number; height: number } | null }, defaultWidth: number): number {
+  return node.size?.width ?? defaultWidth;
 }
 
 /** TES-89: the card body isn't marked as chrome outright — it's still part
@@ -211,6 +229,17 @@ export function CanvasApp({
     startClientX: number;
     startClientY: number;
     startPos: { x: number; y: number };
+  } | null>(null);
+  /** TES-90: an in-progress corner-handle resize, tracked the same way as
+   * `dragRef` — a ref rather than state because it updates on every
+   * pointermove and a resize is a controller write, not a local render. */
+  const resizeRef = useRef<{
+    nodeId: string;
+    pointerId: number;
+    startClientX: number;
+    startClientY: number;
+    startWidth: number;
+    startHeight: number;
   } | null>(null);
   /** Pending touch long-press: set on touch-down over a node, cleared by
    * movement past tolerance, pointer-up, or by firing into `dragRef`. */
@@ -418,11 +447,23 @@ export function CanvasApp({
           x: drag.startPos.x + dx,
           y: drag.startPos.y + dy,
         });
+        return;
+      }
+      const resize = resizeRef.current;
+      if (resize && resize.pointerId === event.pointerId) {
+        const zoom = viewportRef.current.zoom;
+        const dx = (event.clientX - resize.startClientX) / zoom;
+        const dy = (event.clientY - resize.startClientY) / zoom;
+        controller.resizeNode(resize.nodeId, {
+          width: clamp(resize.startWidth + dx, NODE_WIDTH_MIN, NODE_WIDTH_MAX),
+          height: clamp(resize.startHeight + dy, NODE_HEIGHT_MIN, NODE_HEIGHT_MAX),
+        });
       }
     };
     const onUp = (event: PointerEvent) => {
       if (panRef.current?.pointerId === event.pointerId) panRef.current = null;
       if (dragRef.current?.pointerId === event.pointerId) dragRef.current = null;
+      if (resizeRef.current?.pointerId === event.pointerId) resizeRef.current = null;
       if (longPressRef.current?.pointerId === event.pointerId) {
         clearTimeout(longPressRef.current.timer);
         longPressRef.current = null;
@@ -583,6 +624,29 @@ export function CanvasApp({
     [controller],
   );
 
+  /** TES-90: starts a corner-handle resize. Reads the card's real rendered
+   * size off its DOM element (`nodeElsRef`) rather than trusting `node.size`
+   * (which is `null` until the first resize) so the drag starts from
+   * wherever the card actually is right now, auto-sized or not. */
+  const startNodeResize = useCallback(
+    (event: React.PointerEvent, nodeId: string) => {
+      const el = nodeElsRef.current.get(nodeId);
+      if (!el) return;
+      const zoom = viewportRef.current.zoom;
+      const rect = el.getBoundingClientRect();
+      (event.currentTarget as Element).setPointerCapture(event.pointerId);
+      resizeRef.current = {
+        nodeId,
+        pointerId: event.pointerId,
+        startClientX: event.clientX,
+        startClientY: event.clientY,
+        startWidth: rect.width / zoom,
+        startHeight: rect.height / zoom,
+      };
+    },
+    [],
+  );
+
   // ---- Auto-follow (§2.4): pan (never zoom) a newly-created off-screen node
   // into the lower third, unless the user just touched the viewport. -------
 
@@ -668,6 +732,39 @@ export function CanvasApp({
     const current = rovingId;
     const node = current ? graph.nodesById[current] : null;
 
+    // TES-90: Cmd/Ctrl+Alt+arrows resizes the focused card — checked before
+    // the plain Alt+arrows move below, since that condition alone would also
+    // match here. Reads the real rendered size off the DOM the same way
+    // `startNodeResize` does, so the first keyboard resize doesn't jump from
+    // whatever `node.size` happens to be (usually `null`).
+    if (
+      event.key.startsWith("Arrow") &&
+      event.altKey &&
+      (event.metaKey || event.ctrlKey) &&
+      current &&
+      node
+    ) {
+      event.preventDefault();
+      const step = event.shiftKey ? 32 : 8;
+      const el = nodeElsRef.current.get(current);
+      const rect = el?.getBoundingClientRect();
+      const zoom = viewportRef.current.zoom;
+      const currentWidth = effectiveWidth(node, nodeWidth);
+      const currentHeight = node.size?.height ?? (rect ? rect.height / zoom : NODE_HEIGHT);
+      const delta: Record<string, [number, number]> = {
+        ArrowUp: [0, -step],
+        ArrowDown: [0, step],
+        ArrowLeft: [-step, 0],
+        ArrowRight: [step, 0],
+      };
+      const [dw, dh] = delta[event.key];
+      controller.resizeNode(current, {
+        width: clamp(currentWidth + dw, NODE_WIDTH_MIN, NODE_WIDTH_MAX),
+        height: clamp(currentHeight + dh, NODE_HEIGHT_MIN, NODE_HEIGHT_MAX),
+      });
+      return;
+    }
+
     if (event.key.startsWith("Arrow") && event.altKey && current && node) {
       event.preventDefault();
       const step = event.shiftKey ? 64 : 16;
@@ -752,6 +849,12 @@ export function CanvasApp({
         if (current) {
           event.preventDefault();
           controller.toggleCollapsed(current);
+        }
+        break;
+      case "m":
+        if (current) {
+          event.preventDefault();
+          controller.toggleBodyCollapsed(current);
         }
         break;
       case "Delete":
@@ -1004,13 +1107,13 @@ export function CanvasApp({
                           from={{
                             x: parent.position.x,
                             y: parent.position.y,
-                            width: nodeWidth,
+                            width: effectiveWidth(parent, nodeWidth),
                             height: nodeHeightsRef.current.get(parent.id) ?? NODE_HEIGHT,
                           }}
                           to={{
                             x: node.position.x,
                             y: node.position.y,
-                            width: nodeWidth,
+                            width: effectiveWidth(node, nodeWidth),
                             height: nodeHeightsRef.current.get(node.id) ?? NODE_HEIGHT,
                           }}
                           state={state}
@@ -1042,7 +1145,8 @@ export function CanvasApp({
                       >
                         <NodeCard
                           node={node}
-                          width={nodeWidth}
+                          width={effectiveWidth(node, nodeWidth)}
+                          height={node.size?.height ?? null}
                           isSelected={isSelected}
                           tabIndex={id === rovingId ? 0 : -1}
                           childCount={childIds(graph, id).length}
@@ -1069,7 +1173,9 @@ export function CanvasApp({
                           onContinue={() => controller.continueNode(id)}
                           onStop={() => controller.stop(id)}
                           onToggleCollapsed={() => controller.toggleCollapsed(id)}
+                          onToggleBodyCollapsed={() => controller.toggleBodyCollapsed(id)}
                           onPointerDownCard={(event) => startNodeDrag(event, id)}
+                          onPointerDownResizeHandle={(event) => startNodeResize(event, id)}
                           registerRef={(el) => {
                             const prevEl = nodeElsRef.current.get(id);
                             if (prevEl && prevEl !== el) nodeResizeObserverRef.current?.unobserve(prevEl);

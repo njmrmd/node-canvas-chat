@@ -94,6 +94,9 @@ function IconButton({
 export type NodeCardProps = {
   node: ConversationNode;
   width: number;
+  /** TES-90: an explicit, user-resized height — `null` means "size to
+   * content", the pre-resize behaviour (`minHeight`/`maxHeight` below). */
+  height: number | null;
   isSelected: boolean;
   tabIndex: number;
   childCount: number;
@@ -115,7 +118,9 @@ export type NodeCardProps = {
   onContinue: () => void;
   onStop: () => void;
   onToggleCollapsed: () => void;
+  onToggleBodyCollapsed: () => void;
   onPointerDownCard: (event: React.PointerEvent) => void;
+  onPointerDownResizeHandle: (event: React.PointerEvent) => void;
   registerRef: (element: HTMLDivElement | null) => void;
   showFirstRunPulse: boolean;
 };
@@ -148,6 +153,17 @@ export function NodeCard(props: NodeCardProps) {
 
   const isContinuation = node.prompt === CONTINUE_PROMPT;
   const errorPresentation = node.error ? presentError(node.error) : null;
+
+  // TES-90: the card's own body collapsed to one line, independent of
+  // `node.collapsed` (which hides descendants instead — see `onToggleCollapsed`).
+  const isBodyCollapsed = node.bodyCollapsed;
+  const collapsedSummary = (() => {
+    const firstLine = node.response.split("\n").find((line) => line.trim() !== "");
+    if (firstLine) return firstLine.trim();
+    if (node.status === "error" && errorPresentation) return errorPresentation.message;
+    if (isQueued || isStreaming) return copy("node.status.thinking");
+    return node.prompt;
+  })();
 
   const statusChip = (() => {
     if (isQueued) {
@@ -229,7 +245,11 @@ export function NodeCard(props: NodeCardProps) {
         position: "relative",
         width: props.width,
         minHeight: 96,
-        maxHeight: 420,
+        // TES-90: a body-collapsed card always sizes to its one line,
+        // regardless of any manual resize — showing a tall, mostly-empty
+        // card would defeat the point of collapsing it.
+        height: isBodyCollapsed ? undefined : (props.height ?? undefined),
+        maxHeight: isBodyCollapsed ? undefined : (props.height ?? 420),
         display: "flex",
         flexDirection: "column",
         background: "var(--surface-1)",
@@ -254,6 +274,12 @@ export function NodeCard(props: NodeCardProps) {
             <>
               <IconButton label={copy("node.action.retry")} onClick={props.onRetry}>
                 <RetryIcon />
+              </IconButton>
+              <IconButton
+                label={isBodyCollapsed ? "Show full reply" : "Collapse to one line"}
+                onClick={props.onToggleBodyCollapsed}
+              >
+                <FoldIcon collapsed={isBodyCollapsed} />
               </IconButton>
               <IconButton label={copy("node.action.remove")} onClick={props.onRemove} tone="delete">
                 <TrashIcon />
@@ -280,6 +306,18 @@ export function NodeCard(props: NodeCardProps) {
                   <EditIcon />
                 </IconButton>
               ) : null}
+              {/* TES-90: collapses this card's own body to one line — every
+               * card gets this, unlike the subtree-collapse chevron below,
+               * which only appears once there is a subtree to hide. A
+               * distinct icon (arrows meeting vs. a single chevron) so the
+               * two aren't mistaken for the same control. Design Engineer
+               * to confirm the affordance and icon language. */}
+              <IconButton
+                label={isBodyCollapsed ? "Show full reply" : "Collapse to one line"}
+                onClick={props.onToggleBodyCollapsed}
+              >
+                <FoldIcon collapsed={isBodyCollapsed} />
+              </IconButton>
               {props.childCount > 0 ? (
                 <IconButton
                   label={node.collapsed ? `Expand (${props.childCount})` : "Collapse"}
@@ -370,6 +408,20 @@ export function NodeCard(props: NodeCardProps) {
               </button>
             </div>
           </div>
+        ) : isBodyCollapsed ? (
+          <p
+            style={{
+              font: "var(--text-sm)",
+              fontWeight: "var(--weight-assistant-text)",
+              color: "var(--text-primary)",
+              margin: 0,
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
+            {collapsedSummary}
+          </p>
         ) : (
           <>
             <p
@@ -526,6 +578,40 @@ export function NodeCard(props: NodeCardProps) {
           +
         </button>
       </div>
+
+      {/* TES-90: corner resize handle, bottom-right, overhanging like the
+       * branch handle. Drag math (pointer capture, zoom-adjusted delta,
+       * min/max clamping) lives in canvas-app.tsx next to the equivalent
+       * node-drag handling; this is just the affordance. */}
+      {!isBodyCollapsed ? (
+        <button
+          type="button"
+          className="cv-resize-handle cv-focus-ring"
+          aria-label="Resize card"
+          title="Drag to resize"
+          onPointerDown={(event) => {
+            event.stopPropagation();
+            props.onPointerDownResizeHandle(event);
+          }}
+          style={{
+            position: "absolute",
+            right: -6,
+            bottom: -6,
+            width: 20,
+            height: 20,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            borderRadius: "var(--radius-sm)",
+            background: "transparent",
+            color: "var(--text-tertiary)",
+            cursor: "nwse-resize",
+            touchAction: "none",
+          }}
+        >
+          <ResizeIcon />
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -563,6 +649,44 @@ function RetryIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
       <path d="M13 8a5 5 0 1 1-1.6-3.65M13 2.5V5h-2.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+/** TES-90: this card's own body, collapsed to one line — arrows meeting
+ * (collapsed) or pulling apart (expanded). Deliberately not `ChevronIcon`,
+ * which already means "hide my children" elsewhere on this card. */
+function FoldIcon({ collapsed }: { collapsed: boolean }) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      {collapsed ? (
+        <path
+          d="M4 6.5 8 3l4 3.5M4 12.5l4-3.5 4 3.5"
+          stroke="currentColor"
+          strokeWidth="1.3"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      ) : (
+        <path
+          d="M4 4 8 7.5 12 4M4 15l4-3.5 4 3.5"
+          stroke="currentColor"
+          strokeWidth="1.3"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      )}
+    </svg>
+  );
+}
+function ResizeIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+      <path
+        d="M12 12 8 12M12 12 12 8M12 12 5 5"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+      />
     </svg>
   );
 }

@@ -51,6 +51,8 @@ export type NodeError = {
 
 export type Point = { x: number; y: number };
 
+export type Size = { width: number; height: number };
+
 /** §1.1: `auto` nodes are re-placed by Tidy; a dragged node becomes `manual`
  *  and Tidy never touches it again. */
 export type PositionMode = "auto" | "manual";
@@ -68,8 +70,16 @@ export type ConversationNode = {
   error: NodeError | null;
   position: Point;
   positionMode: PositionMode;
+  /** TES-90: a user-dragged size, same idea as `position`/`positionMode` — a
+   * property of the node, persisted the same way. `null` means "not resized":
+   * the card uses the viewport's default width and sizes its height to its
+   * content, exactly like before this field existed. */
+  size: Size | null;
   /** §4.9: subtree hidden below this node, chevron shows a count instead. */
   collapsed: boolean;
+  /** TES-90: this card's own body collapsed to one line — independent of
+   * `collapsed`, which hides descendants instead. */
+  bodyCollapsed: boolean;
   usage: { inputTokens: number; outputTokens: number } | null;
   createdAt: number;
   updatedAt: number;
@@ -206,7 +216,9 @@ export function addNode(
     error: null,
     position: input.position,
     positionMode: "auto",
+    size: null,
     collapsed: false,
+    bodyCollapsed: false,
     usage: null,
     createdAt: now,
     updatedAt: now,
@@ -285,6 +297,25 @@ export function setCollapsed(
   now?: number,
 ): ConversationGraph {
   return patchNode(graph, nodeId, { collapsed }, now);
+}
+
+export function setBodyCollapsed(
+  graph: ConversationGraph,
+  nodeId: string,
+  bodyCollapsed: boolean,
+  now?: number,
+): ConversationGraph {
+  return patchNode(graph, nodeId, { bodyCollapsed }, now);
+}
+
+/** A drag on the resize handle: sets a persisted, explicit size for the card. */
+export function resizeNode(
+  graph: ConversationGraph,
+  nodeId: string,
+  size: Size,
+  now?: number,
+): ConversationGraph {
+  return patchNode(graph, nodeId, { size }, now);
 }
 
 /** §2.4 Tidy: every node reverts to `auto` so the next layout pass places it. */

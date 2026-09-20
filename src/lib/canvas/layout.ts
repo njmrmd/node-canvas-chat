@@ -12,7 +12,35 @@ import {
  * the height-measurement plumbing in `canvas-app.tsx`. */
 export type NodeHeights = ReadonlyMap<string, number>;
 
+/** TES-90: real per-node card widths, the same idea as `NodeHeights` but for
+ * the width a card has been manually resized to. A node with no entry (never
+ * resized) falls back to the caller's default (viewport) width. */
+export type NodeWidths = ReadonlyMap<string, number>;
+
 const NO_HEIGHTS: NodeHeights = new Map();
+const NO_WIDTHS: NodeWidths = new Map();
+
+/** TES-90: sensible min/max for a manual resize — small enough that a card
+ * can't be dragged into unreadable uselessness, large enough that "read a
+ * long answer comfortably" is actually possible. */
+export const NODE_WIDTH_MIN = 240;
+export const NODE_WIDTH_MAX = 640;
+export const NODE_HEIGHT_MIN = 120;
+export const NODE_HEIGHT_MAX = 900;
+
+/** Builds a `NodeWidths` map straight from the graph's own per-node `size` —
+ * unlike height, width is never content-driven, so it never needs to be
+ * measured off the DOM; the graph already knows it. */
+export function nodeWidthsFrom(
+  graph: ConversationGraph,
+  defaultWidth: number = NODE_WIDTH_DESKTOP,
+): NodeWidths {
+  const widths = new Map<string, number>();
+  for (const id of graph.nodeIds) {
+    widths.set(id, graph.nodesById[id].size?.width ?? defaultWidth);
+  }
+  return widths;
+}
 
 /**
  * §2.4's auto-layout: auto-place on create (cheap, no reflow) plus a full
@@ -50,6 +78,10 @@ function rectsOverlap(
 
 function heightOf(heights: NodeHeights, nodeId: string): number {
   return heights.get(nodeId) ?? NODE_HEIGHT;
+}
+
+function widthOf(widths: NodeWidths, nodeId: string, defaultWidth: number): number {
+  return widths.get(nodeId) ?? defaultWidth;
 }
 
 /** Depth of every node, root(s) at depth 0, via a BFS from the roots. */
@@ -95,32 +127,38 @@ export function autoPlaceOnCreate(
   parentId: string | null,
   width: number = NODE_WIDTH_DESKTOP,
   heights: NodeHeights = NO_HEIGHTS,
+  widths: NodeWidths = NO_WIDTHS,
 ): Point {
   if (parentId === null) {
-    // A root with no parent: place clear of every existing root.
-    const existing = rootIds(graph).map((id) => graph.nodesById[id].position);
-    const maxX = existing.reduce((max, p) => Math.max(max, p.x), -Infinity);
-    return { x: Number.isFinite(maxX) ? maxX + width + H_GAP : 0, y: 0 };
+    // A root with no parent: place clear of every existing root, using each
+    // root's own real width rather than assuming the default.
+    const existingRoots = rootIds(graph);
+    const maxX = existingRoots.reduce(
+      (max, id) => Math.max(max, graph.nodesById[id].position.x + widthOf(widths, id, width)),
+      -Infinity,
+    );
+    return { x: Number.isFinite(maxX) ? maxX + H_GAP : 0, y: 0 };
   }
 
   const parent = graph.nodesById[parentId];
   const siblingIndex = childIds(graph, parentId).length;
-  let x = parent.position.x + (width + H_GAP) * siblingIndex;
+  let x = parent.position.x + (widthOf(widths, parentId, width) + H_GAP) * siblingIndex;
   const y = parent.position.y + heightOf(heights, parentId) + V_GAP;
 
-  // Includes the parent: a parent taller than the nominal `NODE_HEIGHT` can
-  // reach down into a naively-offset child's rect, and only the parent's real
-  // height (above) rules that out — the overlap loop must still be able to
-  // see it.
+  // Includes the parent: a parent taller or wider than the nominal defaults
+  // can reach into a naively-offset child's rect, and only the parent's real
+  // height/width (above and below) rules that out — the overlap loop must
+  // still be able to see it.
   const occupied = graph.nodeIds.map((id) => ({
     position: graph.nodesById[id].position,
     height: heightOf(heights, id),
+    width: widthOf(widths, id, width),
   }));
 
   const candidate = () => ({ x, y, width, height: NODE_HEIGHT });
   while (
     occupied.some((o) =>
-      rectsOverlap(candidate(), { x: o.position.x, y: o.position.y, width, height: o.height }),
+      rectsOverlap(candidate(), { x: o.position.x, y: o.position.y, width: o.width, height: o.height }),
     )
   ) {
     x += width + H_GAP;
@@ -145,8 +183,10 @@ function layoutSubtree(
   width: number,
   offsets: number[],
   writes: Map<string, Point>,
+  widths: NodeWidths,
 ): TidyResult {
   const node = graph.nodesById[nodeId];
+  const ownWidth = widthOf(widths, nodeId, width);
   const children = childIds(graph, nodeId).sort(
     (a, b) => graph.nodesById[a].createdAt - graph.nodesById[b].createdAt,
   );
@@ -157,13 +197,13 @@ function layoutSubtree(
         ? node.position
         : { x: 0, y: offsets[depth] };
     if (node.positionMode !== "manual") writes.set(nodeId, position);
-    return { position, subtreeWidth: width };
+    return { position, subtreeWidth: ownWidth };
   }
 
   let cursor = 0;
   const childResults: TidyResult[] = [];
   for (const childId of children) {
-    const result = layoutSubtree(graph, childId, depth + 1, width, offsets, writes);
+    const result = layoutSubtree(graph, childId, depth + 1, width, offsets, writes, widths);
     const childNode = graph.nodesById[childId];
     // Each child comes back laid out in its own local frame starting at
     // x = 0 — shift its whole (already-written) subtree over to where it
@@ -179,14 +219,15 @@ function layoutSubtree(
     childResults.push({ position: { x: shiftedX, y: result.position.y }, subtreeWidth: result.subtreeWidth });
     cursor += result.subtreeWidth + H_GAP;
   }
-  const subtreeWidth = Math.max(width, cursor - H_GAP);
+  const subtreeWidth = Math.max(ownWidth, cursor - H_GAP);
 
   // Center children under this node's eventual x, then shift the whole group
   // so it starts at x = 0 for this call's local frame; the caller offsets it.
   const firstChildX = childResults[0].position.x;
   const lastChild = childResults[childResults.length - 1];
-  const span = lastChild.position.x + width - firstChildX;
-  const centerX = firstChildX + span / 2 - width / 2;
+  const lastChildId = children[children.length - 1];
+  const span = lastChild.position.x + widthOf(widths, lastChildId, width) - firstChildX;
+  const centerX = firstChildX + span / 2 - ownWidth / 2;
 
   const position =
     node.positionMode === "manual"
@@ -207,6 +248,7 @@ export function tidyLayout(
   graph: ConversationGraph,
   width: number = NODE_WIDTH_DESKTOP,
   heights: NodeHeights = NO_HEIGHTS,
+  widths: NodeWidths = NO_WIDTHS,
 ): ConversationGraph {
   const writes = new Map<string, Point>();
   const offsets = rowOffsets(graph, heights);
@@ -216,7 +258,7 @@ export function tidyLayout(
 
   let cursor = 0;
   for (const rootId of roots) {
-    const result = layoutSubtree(graph, rootId, 0, width, offsets, writes);
+    const result = layoutSubtree(graph, rootId, 0, width, offsets, writes, widths);
     // Shift this root's whole subtree so roots never overlap horizontally.
     const shift = cursor - result.position.x;
     if (graph.nodesById[rootId].positionMode !== "manual") {
@@ -260,11 +302,12 @@ export function graphBounds(
   let maxY = -Infinity;
 
   for (const id of graph.nodeIds) {
-    const { x, y } = graph.nodesById[id].position;
+    const node = graph.nodesById[id];
+    const { x, y } = node.position;
     minX = Math.min(minX, x);
     minY = Math.min(minY, y);
-    maxX = Math.max(maxX, x + width);
-    maxY = Math.max(maxY, y + NODE_HEIGHT);
+    maxX = Math.max(maxX, x + (node.size?.width ?? width));
+    maxY = Math.max(maxY, y + (node.size?.height ?? NODE_HEIGHT));
   }
 
   return { minX, minY, maxX, maxY };

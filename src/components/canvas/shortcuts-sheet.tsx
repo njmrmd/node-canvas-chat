@@ -16,6 +16,8 @@ const ROWS: Array<[string, string]> = [
   ["B", "Branch from focused node"],
   ["R", "Regenerate focused node"],
   ["C", "Collapse / expand focused node's subtree"],
+  ["M", "Collapse / expand focused node's own body to one line"],
+  ["Cmd/Ctrl + Alt + arrows", "Resize focused node"],
   ["Delete / Backspace", "Delete focused node + subtree"],
   ["Esc", "Stop generation (node focused, streaming)"],
   ["Cmd/Ctrl + Enter", "Send"],

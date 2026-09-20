@@ -21,7 +21,9 @@ import {
   moveNode as moveNodeInGraph,
   removeBranch,
   resetAllToAuto,
+  resizeNode as resizeNodeInGraph,
   rootIds,
+  setBodyCollapsed as setNodeBodyCollapsed,
   setCollapsed as setNodeCollapsed,
   settleOrphanedStreams,
   startStreaming,
@@ -29,6 +31,7 @@ import {
   type ConversationGraph,
   type ConversationNode,
   type Point,
+  type Size,
 } from "@/lib/conversation/graph";
 import { streamChat } from "@/lib/conversation/stream";
 import { apiFetch, type RateLimitSnapshot } from "@/lib/api-client";
@@ -37,6 +40,7 @@ import {
   NODE_WIDTH_DESKTOP,
   NODE_WIDTH_MOBILE,
   autoPlaceOnCreate,
+  nodeWidthsFrom,
   tidyLayout,
   type NodeHeights,
 } from "@/lib/canvas/layout";
@@ -396,11 +400,13 @@ export function useCanvasController(options: {
 
   const createAndStream = useCallback(
     (parentId: string | null, prompt: string) => {
+      const defaultWidth = widthFor(isMobile);
       const position = autoPlaceOnCreate(
         graphRef.current,
         parentId,
-        widthFor(isMobile),
+        defaultWidth,
         nodeHeightsRef?.current ?? NO_HEIGHTS,
+        nodeWidthsFrom(graphRef.current, defaultWidth),
       );
       const { graph: g2, node } = addNode(graphRef.current, { parentId, prompt, position });
       setGraph(g2);
@@ -538,8 +544,28 @@ export function useCanvasController(options: {
   }, []);
 
   const tidy = useCallback(() => {
-    setGraph((g) => tidyLayout(resetAllToAuto(g), widthFor(isMobile), nodeHeightsRef?.current ?? NO_HEIGHTS));
+    setGraph((g) => {
+      const reset = resetAllToAuto(g);
+      const defaultWidth = widthFor(isMobile);
+      return tidyLayout(
+        reset,
+        defaultWidth,
+        nodeHeightsRef?.current ?? NO_HEIGHTS,
+        nodeWidthsFrom(reset, defaultWidth),
+      );
+    });
   }, [isMobile, nodeHeightsRef]);
+
+  const resizeNode = useCallback((nodeId: string, size: Size) => {
+    setGraph((g) => resizeNodeInGraph(g, nodeId, size));
+  }, []);
+
+  const toggleBodyCollapsed = useCallback((nodeId: string) => {
+    setGraph((g) => {
+      const node = g.nodesById[nodeId];
+      return node ? setNodeBodyCollapsed(g, nodeId, !node.bodyCollapsed) : g;
+    });
+  }, []);
 
   const setViewport = useCallback((next: typeof viewport) => {
     setViewportState(next);
@@ -576,7 +602,9 @@ export function useCanvasController(options: {
     undoDelete,
     removeErrorNode,
     moveNode,
+    resizeNode,
     toggleCollapsed,
+    toggleBodyCollapsed,
     tidy,
   };
 }

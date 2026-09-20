@@ -85,6 +85,23 @@
   100% { transform: scale(1); }
 }
 
+.cv-resize-handle {
+  opacity: 0;
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.cv-node:hover .cv-resize-handle,
+.cv-node:focus-within .cv-resize-handle,
+.cv-resize-handle:focus-visible {
+  opacity: 1;
+}
+
+.cv-resize-handle:hover {
+  color: var(--text-primary);
+}
+
 .cv-node-actions {
   opacity: 0;
   transition: opacity var(--dur-fast) var(--ease-out);
@@ -185,6 +202,7 @@
   .cv-node,
   .cv-node[data-dropped="true"],
   .cv-branch-handle,
+  .cv-resize-handle,
   .cv-node-actions,
   .cv-edge-highlight,
   .cv-node-slot[data-animate="true"],
