@@ -134,4 +134,45 @@ describe("autoPlaceOnCreate", () => {
 
     assertNoOverlaps(withChild, WIDTH, heights);
   });
+
+  it("TES-80: branching a second child onto a node that already has one lands at a distinct x, not stacked on the first", () => {
+    // Mirrors the reported repro shape: a parent with one existing child (the
+    // original reply) gets a second child from a Branch (a fork), and the
+    // two must sit side by side — this is the auto-place half of TES-80's
+    // ask, independent of Tidy.
+    let graph = createGraph();
+    graph = addAnswered(graph, "root", null);
+    graph = addAnswered(graph, "parent", "root");
+
+    const firstChildPosition = autoPlaceOnCreate(graph, "parent", WIDTH);
+    const { graph: withFirstChild } = addNode(graph, {
+      id: "first-child",
+      parentId: "parent",
+      prompt: "hi",
+      position: firstChildPosition,
+    });
+    graph = appendText(withFirstChild, "first-child", "answer");
+
+    const secondChildPosition = autoPlaceOnCreate(graph, "parent", WIDTH);
+    addNode(graph, {
+      id: "second-child",
+      parentId: "parent",
+      prompt: "hi",
+      position: secondChildPosition,
+    });
+
+    assert.notEqual(
+      firstChildPosition.x,
+      secondChildPosition.x,
+      "the two children of the same parent must not land on the same x",
+    );
+    assert.equal(
+      rectsOverlap(
+        { ...firstChildPosition, width: WIDTH, height: FALLBACK_HEIGHT },
+        { ...secondChildPosition, width: WIDTH, height: FALLBACK_HEIGHT },
+      ),
+      false,
+      "the two children must not overlap each other",
+    );
+  });
 });
