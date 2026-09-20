@@ -215,10 +215,11 @@
 }
 
 /*
- * §5.8 Cyanotype canvas surface (TES-108 tokens, TES-109 implementation).
+ * §5.8 Cyanotype canvas surface (TES-108 tokens, TES-109 implementation,
+ * TES-112 made unconditional).
  *
  * Scoped to `.cv-world` (the transformed layer holding edges + node cards)
- * and to the new `.cv-paper-layer`/`.cv-mm-grid`/`.cv-grain-layer` elements
+ * and to the `.cv-paper-layer`/`.cv-mm-grid`/`.cv-grain-layer` elements
  * `canvas-app.tsx` renders behind it — never to `.canvas-surface` itself.
  * The composer, top bar and toasts are siblings of `.cv-world`, not
  * descendants, specifically so that redefining these custom properties here
@@ -226,132 +227,118 @@
  * whatever the active theme says," and `--text-primary`/`--surface-1`/
  * `--accent`/etc. are exactly the names the chrome's own components read.
  *
- * Gated by `prefers-color-scheme: dark` rather than a class this component
- * would have to compute: there is no live chrome-theme toggle in this app to
- * key a class off (canvas-tokens.css's `data-theme` attribute is set nowhere
- * outside the dev tokens page), and this media query is the one live signal
- * `globals.css` already uses to put the pre-canvas surface in dark mode.
- * §5.8's "dark chrome only" recommendation becomes exactly that with no new
- * plumbing: OS-light leaves both the chrome and the canvas exactly as they
- * render today, OS-dark switches both.
+ * Unconditional per TES-112: cyanotype is the canvas's only mode, regardless
+ * of the visitor's OS light/dark preference. The chrome (top bar, sidebar,
+ * composer, modals), landing page and auth screens are untouched and keep
+ * whatever light/dark toggle they have today.
  */
 
-.cv-paper-layer,
-.cv-mm-grid,
-.cv-grain-layer {
-  display: none;
+.cv-world {
+  /* Text, surface and accent — replaced for everything the transformed
+   * layer contains: card chrome, markdown, ports, edges. `--danger`/
+   * `--warning`/`--success` are inherited unchanged per §5.8. */
+  --text-primary: var(--cy-ink);
+  --text-secondary: var(--cy-ink-soft);
+  --text-tertiary: var(--cy-ink-faint);
+  --accent: var(--cy-gold);
+  --accent-hover: var(--cy-gold);
+  --accent-fg: var(--cy-paper-deep);
+  --accent-soft: rgba(218, 174, 70, 0.14);
+  --edge-default: var(--cy-ink-faint);
+  --border-subtle: rgba(227, 220, 202, 0.1);
+  --border-strong: rgba(227, 220, 202, 0.35);
+  /* §5.8 card spec: resting stroke 18%; hover/dragging/selected below. */
+  --border-default: rgba(227, 220, 202, 0.18);
+  --surface-1: transparent;
+  --surface-2: rgba(20, 46, 70, 0.6); /* --cy-paper-lift @ 60% */
+  --surface-3: var(--cy-paper-lift);
+  /* "No drop shadows anywhere on the canvas" (§5.8). `--shadow-2` is a
+   * zero-alpha shadow rather than `none`: the selected state below
+   * combines it with a second, real inset shadow, and `box-shadow: none,
+   * ...` is invalid CSS that drops the whole declaration — ring included. */
+  --shadow-0: none;
+  --shadow-1: none;
+  --shadow-2: 0 0 #0000;
+  --shadow-3: 0 0 #0000;
+  --focus-ring: var(--cy-gold);
+  /* §5.8: "drafted, not the canvas's usual radius-lg 14px" — 4px instead. */
+  --radius-lg: 4px;
 }
 
-@media (prefers-color-scheme: dark) {
-  .cv-world {
-    /* Text, surface and accent — replaced for everything the transformed
-     * layer contains: card chrome, markdown, ports, edges. `--danger`/
-     * `--warning`/`--success` are inherited unchanged per §5.8. */
-    --text-primary: var(--cy-ink);
-    --text-secondary: var(--cy-ink-soft);
-    --text-tertiary: var(--cy-ink-faint);
-    --accent: var(--cy-gold);
-    --accent-hover: var(--cy-gold);
-    --accent-fg: var(--cy-paper-deep);
-    --accent-soft: rgba(218, 174, 70, 0.14);
-    --edge-default: var(--cy-ink-faint);
-    --border-subtle: rgba(227, 220, 202, 0.1);
-    --border-strong: rgba(227, 220, 202, 0.35);
-    /* §5.8 card spec: resting stroke 18%; hover/dragging/selected below. */
-    --border-default: rgba(227, 220, 202, 0.18);
-    --surface-1: transparent;
-    --surface-2: rgba(20, 46, 70, 0.6); /* --cy-paper-lift @ 60% */
-    --surface-3: var(--cy-paper-lift);
-    /* "No drop shadows anywhere on the canvas" (§5.8). `--shadow-2` is a
-     * zero-alpha shadow rather than `none`: the selected state below
-     * combines it with a second, real inset shadow, and `box-shadow: none,
-     * ...` is invalid CSS that drops the whole declaration — ring included. */
-    --shadow-0: none;
-    --shadow-1: none;
-    --shadow-2: 0 0 #0000;
-    --shadow-3: 0 0 #0000;
-    --focus-ring: var(--cy-gold);
-    /* §5.8: "drafted, not the canvas's usual radius-lg 14px" — 4px instead. */
-    --radius-lg: 4px;
-  }
+/* §5.8: hover fill --cy-paper-lift @ 60%, stroke 18% -> 28%. */
+.cv-node:hover:not([data-dragging="true"]) {
+  --surface-1: rgba(20, 46, 70, 0.6);
+  --border-default: rgba(227, 220, 202, 0.28);
+}
 
-  /* §5.8: hover fill --cy-paper-lift @ 60%, stroke 18% -> 28%. */
-  .cv-node:hover:not([data-dragging="true"]) {
-    --surface-1: rgba(20, 46, 70, 0.6);
-    --border-default: rgba(227, 220, 202, 0.28);
-  }
+/* §5.8: "solid --cy-paper-lift when active" — the held-down/drag state is
+ * the one state the resting/hover rules don't already cover. */
+.cv-node[data-dragging="true"] {
+  --surface-1: var(--cy-paper-lift);
+  --border-default: rgba(227, 220, 202, 0.28);
+}
 
-  /* §5.8: "solid --cy-paper-lift when active" — the held-down/drag state is
-   * the one state the resting/hover rules don't already cover. */
-  .cv-node[data-dragging="true"] {
-    --surface-1: var(--cy-paper-lift);
-    --border-default: rgba(227, 220, 202, 0.28);
-  }
+/* §5.8: selected border goes to --cy-gold at 60% — dimmer than the solid
+ * gold everything else in the card (caret, ports, branch handle) uses, via
+ * the `--cv-select-ring` indirection defined on `.cv-node` above. */
+.cv-node[aria-current="true"] {
+  --cv-select-ring: rgba(218, 174, 70, 0.6);
+}
 
-  /* §5.8: selected border goes to --cy-gold at 60% — dimmer than the solid
-   * gold everything else in the card (caret, ports, branch handle) uses, via
-   * the `--cv-select-ring` indirection defined on `.cv-node` above. */
-  .cv-node[aria-current="true"] {
-    --cv-select-ring: rgba(218, 174, 70, 0.6);
-  }
+/* §5.8: dashed while the child is pending/streaming, solid once it
+ * settles. `data-pending` is set by `edge.tsx`/`canvas-app.tsx`. */
+.cv-edge-path[data-pending="true"] {
+  stroke-dasharray: 4 4;
+}
 
-  /* §5.8: dashed while the child is pending/streaming, solid once it
-   * settles. `data-pending` is set by `edge.tsx`/`canvas-app.tsx`; outside
-   * this media query it's inert; every wire there stays solid as today. */
-  .cv-edge-path[data-pending="true"] {
-    stroke-dasharray: 4 4;
-  }
+/* ---- Paper, grid and grain layers ------------------------------------ */
 
-  /* ---- Paper, grid and grain layers (canvas-app.tsx renders all three
-   * unconditionally; this media query is what actually shows them) ------ */
+.cv-paper-layer {
+  display: block;
+  background: radial-gradient(
+    circle at center,
+    var(--cy-paper-lift) 0%,
+    var(--cy-paper) 55%,
+    var(--cy-paper-edge) 100%
+  );
+}
 
-  .cv-paper-layer {
-    display: block;
-    background: radial-gradient(
-      circle at center,
-      var(--cy-paper-lift) 0%,
-      var(--cy-paper) 55%,
-      var(--cy-paper-edge) 100%
-    );
-  }
+.cv-mm-grid {
+  display: block;
+}
 
-  .cv-mm-grid {
-    display: block;
-  }
+/* Major (every 5th, 40px) and the optional decade (80px) rule — both
+ * steady at every zoom, unlike the minor rule below, so they share one
+ * layer/one element rather than needing their own fade logic. */
+.cv-mm-grid-major {
+  background-image:
+    repeating-linear-gradient(to right, rgba(227, 220, 202, 0.14) 0, rgba(227, 220, 202, 0.14) 1px, transparent 1px, transparent 80px),
+    repeating-linear-gradient(to bottom, rgba(227, 220, 202, 0.14) 0, rgba(227, 220, 202, 0.14) 1px, transparent 1px, transparent 80px),
+    repeating-linear-gradient(to right, rgba(227, 220, 202, 0.09) 0, rgba(227, 220, 202, 0.09) 1px, transparent 1px, transparent 40px),
+    repeating-linear-gradient(to bottom, rgba(227, 220, 202, 0.09) 0, rgba(227, 220, 202, 0.09) 1px, transparent 1px, transparent 40px);
+}
 
-  /* Major (every 5th, 40px) and the optional decade (80px) rule — both
-   * steady at every zoom, unlike the minor rule below, so they share one
-   * layer/one element rather than needing their own fade logic. */
-  .cv-mm-grid-major {
-    background-image:
-      repeating-linear-gradient(to right, rgba(227, 220, 202, 0.14) 0, rgba(227, 220, 202, 0.14) 1px, transparent 1px, transparent 80px),
-      repeating-linear-gradient(to bottom, rgba(227, 220, 202, 0.14) 0, rgba(227, 220, 202, 0.14) 1px, transparent 1px, transparent 80px),
-      repeating-linear-gradient(to right, rgba(227, 220, 202, 0.09) 0, rgba(227, 220, 202, 0.09) 1px, transparent 1px, transparent 40px),
-      repeating-linear-gradient(to bottom, rgba(227, 220, 202, 0.09) 0, rgba(227, 220, 202, 0.09) 1px, transparent 1px, transparent 40px);
-  }
+/* Minor ("1mm", 8px) — `canvas-app.tsx` fades this one to `opacity: 0`
+ * below zoom 0.4 with an inline style; the transition here is what makes
+ * that fade a fade instead of a pop. */
+.cv-mm-grid-minor {
+  background-image:
+    repeating-linear-gradient(to right, rgba(227, 220, 202, 0.04) 0, rgba(227, 220, 202, 0.04) 1px, transparent 1px, transparent 8px),
+    repeating-linear-gradient(to bottom, rgba(227, 220, 202, 0.04) 0, rgba(227, 220, 202, 0.04) 1px, transparent 1px, transparent 8px);
+  transition: opacity var(--dur-base) var(--ease-out);
+}
 
-  /* Minor ("1mm", 8px) — `canvas-app.tsx` fades this one to `opacity: 0`
-   * below zoom 0.4 with an inline style; the transition here is what makes
-   * that fade a fade instead of a pop. */
-  .cv-mm-grid-minor {
-    background-image:
-      repeating-linear-gradient(to right, rgba(227, 220, 202, 0.04) 0, rgba(227, 220, 202, 0.04) 1px, transparent 1px, transparent 8px),
-      repeating-linear-gradient(to bottom, rgba(227, 220, 202, 0.04) 0, rgba(227, 220, 202, 0.04) 1px, transparent 1px, transparent 8px);
-    transition: opacity var(--dur-base) var(--ease-out);
-  }
-
-  .cv-grain-layer {
-    display: block;
-    background-image: url("/canvas-grain.png");
-    background-size: 96px 96px;
-    background-repeat: repeat;
-    mix-blend-mode: overlay;
-    opacity: 0.13;
-  }
+.cv-grain-layer {
+  display: block;
+  background-image: url("/canvas-grain.png");
+  background-size: 96px 96px;
+  background-repeat: repeat;
+  mix-blend-mode: overlay;
+  opacity: 0.13;
 }
 
 /* §5.8: "Suppress under prefers-reduced-transparency." */
-@media (prefers-color-scheme: dark) and (prefers-reduced-transparency: reduce) {
+@media (prefers-reduced-transparency: reduce) {
   .cv-grain-layer {
     display: none;
   }

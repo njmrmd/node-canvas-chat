@@ -1192,15 +1192,14 @@ export function CanvasApp({
               backgroundPosition: `${viewport.x}px ${viewport.y}px`,
             }}
           >
-            {/* §5.8: cyanotype paper + millimetre grid + grain. All three are
-             * `display: none` outside `prefers-color-scheme: dark` (canvas.css)
-             * — see that file's header note on why dark-chrome-only is a media
-             * query here rather than a class this component would have to
-             * compute. Rendered unconditionally, including the empty-canvas
-             * state, since the paper is the surface itself, not a decoration
-             * that waits for a first node. Purely decorative: aria-hidden,
-             * `pointerEvents: "none"`, and the paint order below the edges/
-             * node layers this file already z-indexes. */}
+            {/* §5.8: cyanotype paper + millimetre grid + grain, styled
+             * unconditionally in canvas.css (TES-112) regardless of the
+             * visitor's OS light/dark preference. Rendered unconditionally
+             * here too, including the empty-canvas state, since the paper is
+             * the surface itself, not a decoration that waits for a first
+             * node. Purely decorative: aria-hidden, `pointerEvents: "none"`,
+             * and the paint order below the edges/node layers this file
+             * already z-indexes. */}
             <div aria-hidden="true" className="cv-paper-layer" style={{ position: "absolute", inset: 0, pointerEvents: "none" }} />
             <div
               aria-hidden="true"
