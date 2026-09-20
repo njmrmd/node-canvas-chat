@@ -296,8 +296,22 @@ export function NodeCard(props: NodeCardProps) {
         </div>
       </div>
 
-      {/* Body */}
-      <div style={{ marginTop: "var(--space-3)", flex: 1, minHeight: 0, overflowY: "auto", borderRadius: "var(--radius-lg)" }}>
+      {/* Body — TES-89: `data-canvas-role="card-body"` lets the canvas
+       * surface's wheel handler tell "scroll this" from "pan the canvas"
+       * apart, and `touchAction: "pan-y"` overrides the surface's
+       * `touchAction: "none"` (canvas-app.tsx) so a touch scroll that starts
+       * here is native, not the surface's own pan/drag simulation. */}
+      <div
+        data-canvas-role="card-body"
+        style={{
+          marginTop: "var(--space-3)",
+          flex: 1,
+          minHeight: 0,
+          overflowY: "auto",
+          borderRadius: "var(--radius-lg)",
+          touchAction: "pan-y",
+        }}
+      >
         {editing ? (
           <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
             <textarea

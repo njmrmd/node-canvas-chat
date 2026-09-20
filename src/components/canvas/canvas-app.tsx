@@ -40,6 +40,7 @@ import {
   type Viewport,
 } from "@/lib/canvas/viewport";
 import { graphBounds, NODE_WIDTH_DESKTOP, NODE_WIDTH_MOBILE } from "@/lib/canvas/layout";
+import { routeWheelEvent } from "@/lib/canvas/wheel-routing";
 import type { ModelSpec } from "@/lib/providers/registry";
 
 /** Nominal card height for viewport/pan math — see `layout.ts`'s own note on
@@ -81,6 +82,17 @@ const CHROME_SELECTOR = '[data-canvas-role="chrome"]';
 
 function isOverCanvasChrome(target: EventTarget | null): boolean {
   return target instanceof Element && target.closest(CHROME_SELECTOR) !== null;
+}
+
+/** TES-89: the card body isn't marked as chrome outright — it's still part
+ * of the card for select/drag purposes (`data-node-role="card"` covers it
+ * too) — it only needs to opt out of *this one* surface behaviour, wheel
+ * routing, so it gets its own narrower marker. */
+const CARD_BODY_SELECTOR = '[data-canvas-role="card-body"]';
+
+function findCardBodyElement(target: EventTarget | null): HTMLElement | null {
+  if (!(target instanceof Element)) return null;
+  return target.closest(CARD_BODY_SELECTOR) as HTMLElement | null;
 }
 
 function subscribeMobile(callback: () => void): () => void {
@@ -464,6 +476,25 @@ export function CanvasApp({
 
   const handleWheel = (event: React.WheelEvent) => {
     if (isRootsEmpty) return;
+    const cardBodyEl = findCardBodyElement(event.target);
+    const routing = routeWheelEvent({
+      ctrlKey: event.ctrlKey,
+      metaKey: event.metaKey,
+      deltaY: event.deltaY,
+      cardBody: cardBodyEl
+        ? {
+            scrollTop: cardBodyEl.scrollTop,
+            scrollHeight: cardBodyEl.scrollHeight,
+            clientHeight: cardBodyEl.clientHeight,
+          }
+        : null,
+    });
+    // Let the browser's native scroll run on the card body: no
+    // `preventDefault`, no viewport update. This is the TES-89 fix — the
+    // surface used to `preventDefault` every wheel event unconditionally,
+    // so the card's own `overflowY: auto` (node-card.tsx) never got the
+    // event.
+    if (routing === "card-scroll") return;
     event.preventDefault();
     lastUserViewportChangeRef.current = Date.now();
     if (event.ctrlKey || event.metaKey) {
@@ -485,6 +516,21 @@ export function CanvasApp({
       if (event.button !== 0 || spaceHeldRef.current) return; // let it bubble to pan
       const node = graphRef.current.nodesById[nodeId];
       if (!node) return;
+
+      if (event.pointerType === "touch") {
+        // TES-89: a touch that lands on an overflowing card body is a scroll
+        // reach, not a pan-or-drag reach — hand it to the browser's native
+        // scroll (the body's own `touchAction: "pan-y"` overrides the
+        // surface's `touchAction: "none"` for gestures that start on it) by
+        // never arming the pan/long-press machinery below, and without
+        // taking pointer capture, which would fight that native scroll.
+        // Short cards (the common case) don't overflow, so §6.1's long-press
+        // drag is untouched for them; an overflowing card can still be
+        // dragged by long-pressing outside the body — the header or padding.
+        const cardBody = findCardBodyElement(event.target);
+        if (cardBody && cardBody.scrollHeight > cardBody.clientHeight + 1) return;
+      }
+
       const pointerId = event.pointerId;
       const startClientX = event.clientX;
       const startClientY = event.clientY;
