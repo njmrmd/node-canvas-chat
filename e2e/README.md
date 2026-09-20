@@ -78,3 +78,14 @@ shared across checkouts and survives `rm -rf node_modules`.
 - Anything that needs a signed-in account needs `DATABASE_URL` and
   `KEY_VAULT_ENCRYPTION_KEY`. Say so at the top of the spec, and skip rather
   than fail when they are absent.
+- Anything that needs a real, billable provider call (a real streamed model
+  reply, not just key-format validation) needs its own key passed in — see
+  `E2E_ANTHROPIC_API_KEY` in `sign-up-to-first-chat.spec.ts`. Nothing in this
+  repo provisions that key for free; skip that assertion rather than fake the
+  response when it is absent.
+- Sign-up is rate-limited to 5 per hour per IP (`src/lib/rate-limit.ts`,
+  `POLICIES.signUp`) — it is an abuse control, not a test seam. A spec that
+  signs up more than a couple of accounts, run more than a couple of times in
+  the same hour from the same machine or CI runner, will trip it and fail
+  with "Too many attempts" — a real product response, not a broken test. Keep
+  signups-per-run low and do not add retries around this specifically.
