@@ -6,6 +6,14 @@ import {
   type Point,
 } from "@/lib/conversation/graph";
 
+/** Real measured card heights, keyed by node id. A node with no entry (not
+ * yet measured, e.g. the split second before its first paint) falls back to
+ * `NODE_HEIGHT`. Kept out of the graph model so it stays serialisable — see
+ * the height-measurement plumbing in `canvas-app.tsx`. */
+export type NodeHeights = ReadonlyMap<string, number>;
+
+const NO_HEIGHTS: NodeHeights = new Map();
+
 /**
  * §2.4's auto-layout: auto-place on create (cheap, no reflow) plus a full
  * Tidy pass (§2.4 "Tidy" button / `L`) that re-lays-out every `auto` node as a
@@ -40,6 +48,43 @@ function rectsOverlap(
   );
 }
 
+function heightOf(heights: NodeHeights, nodeId: string): number {
+  return heights.get(nodeId) ?? NODE_HEIGHT;
+}
+
+/** Depth of every node, root(s) at depth 0, via a BFS from the roots. */
+function depthsByNode(graph: ConversationGraph): Map<string, number> {
+  const depths = new Map<string, number>();
+  const queue: Array<[string, number]> = rootIds(graph).map((id) => [id, 0]);
+  while (queue.length > 0) {
+    const [id, depth] = queue.shift()!;
+    depths.set(id, depth);
+    for (const childId of childIds(graph, id)) queue.push([childId, depth + 1]);
+  }
+  return depths;
+}
+
+/**
+ * The y each depth's row starts at: a running sum of the tallest measured
+ * card at every shallower depth, plus one `V_GAP` per row. Replaces the flat
+ * `depth * (NODE_HEIGHT + V_GAP)` pitch, which overlapped any row whose real
+ * cards were taller than 232px.
+ */
+function rowOffsets(graph: ConversationGraph, heights: NodeHeights): number[] {
+  const depths = depthsByNode(graph);
+  const maxHeightByDepth: number[] = [];
+  for (const [nodeId, depth] of depths) {
+    const height = heightOf(heights, nodeId);
+    maxHeightByDepth[depth] = Math.max(maxHeightByDepth[depth] ?? 0, height);
+  }
+
+  const offsets: number[] = [0];
+  for (let depth = 1; depth <= maxHeightByDepth.length; depth++) {
+    offsets[depth] = offsets[depth - 1] + (maxHeightByDepth[depth - 1] ?? NODE_HEIGHT) + V_GAP;
+  }
+  return offsets;
+}
+
 /**
  * §2.4 "Auto-place on create": directly below the parent, shifted right by
  * `(width + gap) × siblingIndex`; if that overlaps an existing card, shift
@@ -49,6 +94,7 @@ export function autoPlaceOnCreate(
   graph: ConversationGraph,
   parentId: string | null,
   width: number = NODE_WIDTH_DESKTOP,
+  heights: NodeHeights = NO_HEIGHTS,
 ): Point {
   if (parentId === null) {
     // A root with no parent: place clear of every existing root.
@@ -60,16 +106,21 @@ export function autoPlaceOnCreate(
   const parent = graph.nodesById[parentId];
   const siblingIndex = childIds(graph, parentId).length;
   let x = parent.position.x + (width + H_GAP) * siblingIndex;
-  const y = parent.position.y + NODE_HEIGHT + V_GAP;
+  const y = parent.position.y + heightOf(heights, parentId) + V_GAP;
 
-  const occupied = graph.nodeIds
-    .filter((id) => id !== parentId)
-    .map((id) => graph.nodesById[id].position);
+  // Includes the parent: a parent taller than the nominal `NODE_HEIGHT` can
+  // reach down into a naively-offset child's rect, and only the parent's real
+  // height (above) rules that out — the overlap loop must still be able to
+  // see it.
+  const occupied = graph.nodeIds.map((id) => ({
+    position: graph.nodesById[id].position,
+    height: heightOf(heights, id),
+  }));
 
   const candidate = () => ({ x, y, width, height: NODE_HEIGHT });
   while (
-    occupied.some((p) =>
-      rectsOverlap(candidate(), { x: p.x, y: p.y, width, height: NODE_HEIGHT }),
+    occupied.some((o) =>
+      rectsOverlap(candidate(), { x: o.position.x, y: o.position.y, width, height: o.height }),
     )
   ) {
     x += width + H_GAP;
@@ -92,6 +143,7 @@ function layoutSubtree(
   nodeId: string,
   depth: number,
   width: number,
+  offsets: number[],
   writes: Map<string, Point>,
 ): TidyResult {
   const node = graph.nodesById[nodeId];
@@ -103,7 +155,7 @@ function layoutSubtree(
     const position =
       node.positionMode === "manual"
         ? node.position
-        : { x: 0, y: depth * (NODE_HEIGHT + V_GAP) };
+        : { x: 0, y: offsets[depth] };
     if (node.positionMode !== "manual") writes.set(nodeId, position);
     return { position, subtreeWidth: width };
   }
@@ -111,8 +163,20 @@ function layoutSubtree(
   let cursor = 0;
   const childResults: TidyResult[] = [];
   for (const childId of children) {
-    const result = layoutSubtree(graph, childId, depth + 1, width, writes);
-    childResults.push(result);
+    const result = layoutSubtree(graph, childId, depth + 1, width, offsets, writes);
+    const childNode = graph.nodesById[childId];
+    // Each child comes back laid out in its own local frame starting at
+    // x = 0 — shift its whole (already-written) subtree over to where it
+    // actually belongs next to its siblings before advancing the cursor.
+    // A manual child is a fixed anchor (like a manual root in `tidyLayout`)
+    // and is left at its real position; its subtree width still reserves
+    // room so auto siblings don't land on top of it.
+    const shift = cursor - result.position.x;
+    if (childNode.positionMode !== "manual") {
+      shiftSubtreeWrites(graph, childId, shift, writes);
+    }
+    const shiftedX = childNode.positionMode !== "manual" ? cursor : result.position.x;
+    childResults.push({ position: { x: shiftedX, y: result.position.y }, subtreeWidth: result.subtreeWidth });
     cursor += result.subtreeWidth + H_GAP;
   }
   const subtreeWidth = Math.max(width, cursor - H_GAP);
@@ -127,7 +191,7 @@ function layoutSubtree(
   const position =
     node.positionMode === "manual"
       ? node.position
-      : { x: centerX, y: depth * (NODE_HEIGHT + V_GAP) };
+      : { x: centerX, y: offsets[depth] };
   if (node.positionMode !== "manual") writes.set(nodeId, position);
 
   return { position, subtreeWidth };
@@ -142,15 +206,17 @@ function layoutSubtree(
 export function tidyLayout(
   graph: ConversationGraph,
   width: number = NODE_WIDTH_DESKTOP,
+  heights: NodeHeights = NO_HEIGHTS,
 ): ConversationGraph {
   const writes = new Map<string, Point>();
+  const offsets = rowOffsets(graph, heights);
   const roots = rootIds(graph).sort(
     (a, b) => graph.nodesById[a].createdAt - graph.nodesById[b].createdAt,
   );
 
   let cursor = 0;
   for (const rootId of roots) {
-    const result = layoutSubtree(graph, rootId, 0, width, writes);
+    const result = layoutSubtree(graph, rootId, 0, width, offsets, writes);
     // Shift this root's whole subtree so roots never overlap horizontally.
     const shift = cursor - result.position.x;
     if (graph.nodesById[rootId].positionMode !== "manual") {

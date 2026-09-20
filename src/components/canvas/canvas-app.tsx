@@ -3,6 +3,8 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
@@ -136,7 +138,13 @@ export function CanvasApp({
     getMobileServerSnapshot,
   );
   const [model, setModel] = useState(defaultModelId);
-  const controller = useCanvasController({ provider: "anthropic", model, isMobile });
+  /** Real card heights, keyed by node id (TES-77): fed to `autoPlaceOnCreate`
+   * and `tidyLayout` so row pitch and overlap checks use what a card actually
+   * renders at instead of the nominal `NODE_HEIGHT`. A ref, not state — the
+   * `ResizeObserver` below (which populates it) fires far more often than a
+   * layout pass needs a re-render. */
+  const nodeHeightsRef = useRef(new Map<string, number>());
+  const controller = useCanvasController({ provider: "anthropic", model, isMobile, nodeHeightsRef });
   const {
     graph,
     viewport,
@@ -204,6 +212,12 @@ export function CanvasApp({
   const didInitialFitRef = useRef(false);
 
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
+  /** Live footprint of the docked composer (§2.4 "Auto-follow"): the band at
+   * the bottom of the surface it overlays, measured rather than assumed,
+   * since it varies with the target chip, disabled state and textarea
+   * growth. Auto-follow/focus math treats this as outside the visible
+   * viewport so a card's bottom never lands behind it (TES-75). */
+  const [composerReservedHeight, setComposerReservedHeight] = useState(0);
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
   const [focusPathMode, setFocusPathMode] = useState(false);
   const [showLinearView, setShowLinearView] = useState(false);
@@ -236,6 +250,63 @@ export function CanvasApp({
     observer.observe(el);
     resizeObserverRef.current = observer;
   }, []);
+
+  /**
+   * The composer chrome is `position: absolute`, so it never affects layout
+   * flow — its height has to be measured, not assumed. Reserved height is the
+   * gap between the surface's bottom edge and the chrome's top edge (not just
+   * the chrome's own height), so it also captures the `space-5` bottom inset
+   * for free.
+   */
+  const composerResizeObserverRef = useRef<ResizeObserver | null>(null);
+  const attachComposerChrome = useCallback((el: HTMLDivElement | null) => {
+    composerResizeObserverRef.current?.disconnect();
+    composerResizeObserverRef.current = null;
+    if (!el) {
+      setComposerReservedHeight(0);
+      return;
+    }
+    const measure = () => {
+      const surfaceEl = surfaceRef.current;
+      if (!surfaceEl) return;
+      const reserved = surfaceEl.getBoundingClientRect().bottom - el.getBoundingClientRect().top;
+      setComposerReservedHeight(Math.max(0, reserved));
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    composerResizeObserverRef.current = observer;
+    measure();
+  }, []);
+
+  /**
+   * TES-77: one `ResizeObserver` watching every registered node card, keyed
+   * by `data-node-id` (set by `NodeCard` itself). Cards vary 96–420px tall
+   * and shrink/grow as they stream, so `nodeHeightsRef` has to track real
+   * height rather than the nominal `NODE_HEIGHT` layout.ts falls back to.
+   */
+  const nodeResizeObserverRef = useRef<ResizeObserver | null>(null);
+  useEffect(() => {
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const id = (entry.target as HTMLElement).dataset.nodeId;
+        if (id) nodeHeightsRef.current.set(id, entry.contentRect.height);
+      }
+    });
+    nodeResizeObserverRef.current = observer;
+    return () => observer.disconnect();
+  }, []);
+
+  /** Visible content area for auto-follow/focus math (§2.4): the surface
+   * minus the composer's reserved band. Not used for zoom-to-fit or render
+   * culling — those already have their own margins and aren't about keeping
+   * a card clear of the composer. */
+  const contentViewportSize = useMemo(
+    () => ({
+      width: viewportSize.width,
+      height: Math.max(0, viewportSize.height - composerReservedHeight),
+    }),
+    [viewportSize.width, viewportSize.height, composerReservedHeight],
+  );
 
   const zoomToFit = useCallback(() => {
     const bounds = graphBounds(graphRef.current, nodeWidth);
@@ -278,11 +349,11 @@ export function CanvasApp({
       return rectInView(
         viewportRef.current,
         { x: node.position.x, y: node.position.y, width: nodeWidth, height: NODE_HEIGHT },
-        viewportSize,
+        contentViewportSize,
       );
     });
     if (!anyVisible) zoomToFit();
-  }, [viewportSize, graph, nodeWidth, zoomToFit]);
+  }, [contentViewportSize, graph, nodeWidth, zoomToFit]);
 
   // ---- Pan (drag / space-drag / middle-drag / two-finger scroll) ---------
 
@@ -479,9 +550,38 @@ export function CanvasApp({
       .map((id) => graph.nodesById[id])
       .sort((a, b) => b.createdAt - a.createdAt)[0];
     const rect = { x: newest.position.x, y: newest.position.y, width: nodeWidth, height: NODE_HEIGHT };
-    if (rectInView(viewportRef.current, rect, viewportSize)) return;
-    setViewport(panToLowerThird(viewportRef.current, rect, viewportSize));
-  }, [graph, viewportSize, nodeWidth, setViewport]);
+    if (rectInView(viewportRef.current, rect, contentViewportSize)) return;
+    setViewport(panToLowerThird(viewportRef.current, rect, contentViewportSize));
+  }, [graph, contentViewportSize, nodeWidth, setViewport]);
+
+  /**
+   * TES-75: the auto-follow pan above fires on node *creation*, using the
+   * nominal `NODE_HEIGHT` — a completed reply with several wrapped lines
+   * renders taller than that estimate, so the pan can undershoot and leave
+   * the card's real bottom behind the composer. Once a node's stream reaches
+   * a terminal state, re-check its actual rendered height (the element
+   * `nodeElsRef` already tracks) and re-pan if it still overlaps the
+   * composer's reserved band.
+   */
+  const nodeStatusesRef = useRef<Map<string, string>>(new Map());
+  useLayoutEffect(() => {
+    const prevStatuses = nodeStatusesRef.current;
+    const justSettled = graph.nodeIds.filter((id) => {
+      const prev = prevStatuses.get(id);
+      return prev === "streaming" && graph.nodesById[id].status !== "streaming";
+    });
+    nodeStatusesRef.current = new Map(graph.nodeIds.map((id) => [id, graph.nodesById[id].status]));
+    if (justSettled.length === 0 || viewportSize.width === 0) return;
+    if (Date.now() - lastUserViewportChangeRef.current < RECENT_USER_VIEWPORT_CHANGE_MS) return;
+    const newest = justSettled
+      .map((id) => graph.nodesById[id])
+      .sort((a, b) => b.createdAt - a.createdAt)[0];
+    const el = nodeElsRef.current.get(newest.id);
+    const renderedHeight = el ? el.getBoundingClientRect().height / viewportRef.current.zoom : NODE_HEIGHT;
+    const rect = { x: newest.position.x, y: newest.position.y, width: nodeWidth, height: renderedHeight };
+    if (rectInView(viewportRef.current, rect, contentViewportSize)) return;
+    setViewport(panToLowerThird(viewportRef.current, rect, contentViewportSize));
+  }, [graph, viewportSize, contentViewportSize, nodeWidth, setViewport]);
 
   // ---- Keyboard (§7.2) ---------------------------------------------------
 
@@ -493,11 +593,11 @@ export function CanvasApp({
       el?.focus();
       if (!node || viewportSize.width === 0) return;
       const rect = { x: node.position.x, y: node.position.y, width: nodeWidth, height: NODE_HEIGHT };
-      if (rectInView(viewportRef.current, rect, viewportSize)) return;
+      if (rectInView(viewportRef.current, rect, contentViewportSize)) return;
       lastUserViewportChangeRef.current = Date.now();
-      setViewport(focusOn(rect, viewportSize, viewportRef.current.zoom, 0.5));
+      setViewport(focusOn(rect, contentViewportSize, viewportRef.current.zoom, 0.5));
     },
-    [viewportSize, nodeWidth, setViewport],
+    [viewportSize, contentViewportSize, nodeWidth, setViewport],
   );
 
   const zoomCenteredOnFocus = useCallback(
@@ -915,8 +1015,15 @@ export function CanvasApp({
                           onToggleCollapsed={() => controller.toggleCollapsed(id)}
                           onPointerDownCard={(event) => startNodeDrag(event, id)}
                           registerRef={(el) => {
-                            if (el) nodeElsRef.current.set(id, el);
-                            else nodeElsRef.current.delete(id);
+                            const prevEl = nodeElsRef.current.get(id);
+                            if (prevEl && prevEl !== el) nodeResizeObserverRef.current?.unobserve(prevEl);
+                            if (el) {
+                              nodeElsRef.current.set(id, el);
+                              nodeResizeObserverRef.current?.observe(el);
+                            } else {
+                              nodeElsRef.current.delete(id);
+                              nodeHeightsRef.current.delete(id);
+                            }
                           }}
                           showFirstRunPulse={
                             !hasBranchedOnce && node.parentId === null && node.status === "complete"
@@ -931,6 +1038,7 @@ export function CanvasApp({
 
             {!isRootsEmpty ? (
               <div
+                ref={attachComposerChrome}
                 data-canvas-role="chrome"
                 style={{
                   position: "absolute",

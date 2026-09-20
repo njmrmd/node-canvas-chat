@@ -38,6 +38,7 @@ import {
   NODE_WIDTH_MOBILE,
   autoPlaceOnCreate,
   tidyLayout,
+  type NodeHeights,
 } from "@/lib/canvas/layout";
 import { CLIENT_TIMEOUT_MESSAGE, toNodeError } from "@/lib/canvas/errors";
 
@@ -123,12 +124,19 @@ function leavesByRecency(graph: ConversationGraph): ConversationNode[] {
     .sort((a, b) => b.createdAt - a.createdAt);
 }
 
+const NO_HEIGHTS: NodeHeights = new Map();
+
 export function useCanvasController(options: {
   provider: "anthropic";
   model: string;
   isMobile: boolean;
+  /** TES-77: real card heights, read synchronously like `graphRef` below —
+   * the ref is owned by the canvas component, whose `ResizeObserver` keeps
+   * it current. Optional so a controller built without a canvas (e.g. a
+   * future test) still lays out against the nominal `NODE_HEIGHT`. */
+  nodeHeightsRef?: { current: NodeHeights };
 }) {
-  const { provider, model, isMobile } = options;
+  const { provider, model, isMobile, nodeHeightsRef } = options;
 
   const [graph, setGraph] = useState<ConversationGraph>({
     nodesById: {},
@@ -388,7 +396,12 @@ export function useCanvasController(options: {
 
   const createAndStream = useCallback(
     (parentId: string | null, prompt: string) => {
-      const position = autoPlaceOnCreate(graphRef.current, parentId, widthFor(isMobile));
+      const position = autoPlaceOnCreate(
+        graphRef.current,
+        parentId,
+        widthFor(isMobile),
+        nodeHeightsRef?.current ?? NO_HEIGHTS,
+      );
       const { graph: g2, node } = addNode(graphRef.current, { parentId, prompt, position });
       setGraph(g2);
       // TES-59/61/62/63: `enqueueOrStart` below can call `beginStream` in this
@@ -407,7 +420,7 @@ export function useCanvasController(options: {
       enqueueOrStart(node.id);
       return node.id;
     },
-    [isMobile, enqueueOrStart],
+    [isMobile, enqueueOrStart, nodeHeightsRef],
   );
 
   const send = useCallback(
@@ -525,8 +538,8 @@ export function useCanvasController(options: {
   }, []);
 
   const tidy = useCallback(() => {
-    setGraph((g) => tidyLayout(resetAllToAuto(g), widthFor(isMobile)));
-  }, [isMobile]);
+    setGraph((g) => tidyLayout(resetAllToAuto(g), widthFor(isMobile), nodeHeightsRef?.current ?? NO_HEIGHTS));
+  }, [isMobile, nodeHeightsRef]);
 
   const setViewport = useCallback((next: typeof viewport) => {
     setViewportState(next);
