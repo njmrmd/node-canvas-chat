@@ -5,9 +5,11 @@ import { expect, test } from "@playwright/test";
  * app boots, and the two public entry points serve — nothing more. The
  * sign-up-to-first-chat path is a separate spec and needs a database.
  *
- * Everything asserted here works with an empty environment. `/sign-up` only
- * touches the database when a session cookie is present, and a fresh browser
- * context has none, so this suite needs no `DATABASE_URL`.
+ * Without a `DATABASE_URL`, `/sign-up` fails closed and renders a "not
+ * finished being set up" notice instead of the form — the same heading, no
+ * form fields. That is correct product behaviour, not a broken page, so this
+ * spec only asserts what is true in both states: the route serves and shows
+ * its heading. Asserting the form fields belongs to the DB-backed spec.
  */
 
 test("the landing page loads", async ({ page }) => {
@@ -17,15 +19,11 @@ test("the landing page loads", async ({ page }) => {
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
 });
 
-test("the sign-up route is reachable and renders its form", async ({
-  page,
-}) => {
+test("the sign-up route is reachable", async ({ page }) => {
   const response = await page.goto("/sign-up");
 
   expect(response?.status()).toBe(200);
   await expect(
     page.getByRole("heading", { name: "Create an account" }),
   ).toBeVisible();
-  await expect(page.getByLabel("Email")).toBeVisible();
-  await expect(page.getByLabel("Password")).toBeVisible();
 });
