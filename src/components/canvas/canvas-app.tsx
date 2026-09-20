@@ -174,6 +174,14 @@ export function CanvasApp({
    * `ResizeObserver` below (which populates it) fires far more often than a
    * layout pass needs a re-render. */
   const nodeHeightsRef = useRef(new Map<string, number>());
+  /** Render-visible mirror of `nodeHeightsRef` (TES-99): edges below read
+   * heights during render, and a ref write alone doesn't schedule one, so a
+   * collapsed/resized card's edges stayed anchored to the old geometry until
+   * some unrelated render happened to run. Kept as a separate state snapshot
+   * rather than reading the ref directly — batched per animation frame with
+   * an epsilon so a card streaming tokens doesn't re-render every frame. */
+  const [nodeHeights, setNodeHeights] = useState(() => new Map<string, number>());
+  const nodeHeightsFrameRef = useRef<number | null>(null);
   const controller = useCanvasController({ provider: "anthropic", model, isMobile, nodeHeightsRef });
   const {
     graph,
@@ -328,13 +336,59 @@ export function CanvasApp({
   const nodeResizeObserverRef = useRef<ResizeObserver | null>(null);
   useEffect(() => {
     const observer = new ResizeObserver((entries) => {
+      let changed = false;
       for (const entry of entries) {
         const id = (entry.target as HTMLElement).dataset.nodeId;
-        if (id) nodeHeightsRef.current.set(id, entry.contentRect.height);
+        if (!id) continue;
+        const next = entry.contentRect.height;
+        const prev = nodeHeightsRef.current.get(id);
+        if (prev === undefined || Math.abs(prev - next) > 0.5) {
+          nodeHeightsRef.current.set(id, next);
+          changed = true;
+        }
+      }
+      if (changed && nodeHeightsFrameRef.current === null) {
+        nodeHeightsFrameRef.current = requestAnimationFrame(() => {
+          nodeHeightsFrameRef.current = null;
+          setNodeHeights(new Map(nodeHeightsRef.current));
+        });
       }
     });
     nodeResizeObserverRef.current = observer;
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      if (nodeHeightsFrameRef.current !== null) {
+        cancelAnimationFrame(nodeHeightsFrameRef.current);
+        nodeHeightsFrameRef.current = null;
+      }
+    };
+  }, []);
+
+  /**
+   * One stable callback shared by every card (TES-99), rather than a fresh
+   * arrow built per card inside the JSX below. `NodeCard` re-runs its own
+   * register/unregister effect whenever the function it was given changes
+   * identity — a per-card closure is a new identity every render, so it used
+   * to unobserve and re-observe every card on every render regardless of
+   * cause. That was silent waste while heights lived only in a ref; once a
+   * real height change feeds `setNodeHeights` (below) it stops being silent —
+   * each spurious re-observe reports the unchanged current height as if it
+   * were new, which schedules another render, which triggers another
+   * spurious re-observe, forever. Taking `id` as an argument instead of
+   * closing over it means one `useCallback([])` covers every card.
+   */
+  const handleRegisterNodeRef = useCallback((id: string, el: HTMLDivElement | null) => {
+    const prevEl = nodeElsRef.current.get(id);
+    if (prevEl && prevEl !== el) nodeResizeObserverRef.current?.unobserve(prevEl);
+    if (el) {
+      nodeElsRef.current.set(id, el);
+      nodeResizeObserverRef.current?.observe(el);
+    } else {
+      nodeElsRef.current.delete(id);
+      if (nodeHeightsRef.current.delete(id)) {
+        setNodeHeights(new Map(nodeHeightsRef.current));
+      }
+    }
   }, []);
 
   /** Visible content area for auto-follow/focus math (§2.4): the surface
@@ -1108,13 +1162,13 @@ export function CanvasApp({
                             x: parent.position.x,
                             y: parent.position.y,
                             width: effectiveWidth(parent, nodeWidth),
-                            height: nodeHeightsRef.current.get(parent.id) ?? NODE_HEIGHT,
+                            height: nodeHeights.get(parent.id) ?? NODE_HEIGHT,
                           }}
                           to={{
                             x: node.position.x,
                             y: node.position.y,
                             width: effectiveWidth(node, nodeWidth),
-                            height: nodeHeightsRef.current.get(node.id) ?? NODE_HEIGHT,
+                            height: nodeHeights.get(node.id) ?? NODE_HEIGHT,
                           }}
                           state={state}
                         />
@@ -1176,17 +1230,7 @@ export function CanvasApp({
                           onToggleBodyCollapsed={() => controller.toggleBodyCollapsed(id)}
                           onPointerDownCard={(event) => startNodeDrag(event, id)}
                           onPointerDownResizeHandle={(event) => startNodeResize(event, id)}
-                          registerRef={(el) => {
-                            const prevEl = nodeElsRef.current.get(id);
-                            if (prevEl && prevEl !== el) nodeResizeObserverRef.current?.unobserve(prevEl);
-                            if (el) {
-                              nodeElsRef.current.set(id, el);
-                              nodeResizeObserverRef.current?.observe(el);
-                            } else {
-                              nodeElsRef.current.delete(id);
-                              nodeHeightsRef.current.delete(id);
-                            }
-                          }}
+                          onRegisterRef={handleRegisterNodeRef}
                           showFirstRunPulse={
                             !hasBranchedOnce && node.parentId === null && node.status === "complete"
                           }

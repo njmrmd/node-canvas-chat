@@ -121,25 +121,30 @@ export type NodeCardProps = {
   onToggleBodyCollapsed: () => void;
   onPointerDownCard: (event: React.PointerEvent) => void;
   onPointerDownResizeHandle: (event: React.PointerEvent) => void;
-  registerRef: (element: HTMLDivElement | null) => void;
+  onRegisterRef: (id: string, element: HTMLDivElement | null) => void;
   showFirstRunPulse: boolean;
 };
 
 export function NodeCard(props: NodeCardProps) {
-  const { node, registerRef } = props;
+  const { node, onRegisterRef } = props;
   const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState(node.prompt);
   const [now, setNow] = useState(() => Date.now());
 
-  // `registerRef` arrives as a prop, so it cannot be handed straight to the
+  // `onRegisterRef` arrives as a prop, so it cannot be handed straight to the
   // JSX `ref` attribute — the element itself is the only thing that may read
   // a ref during render. A locally-owned ref attaches cleanly, and an effect
   // reports it (and its removal) to the parent's registry outside render.
+  //
+  // Takes `node.id` rather than closing over it so the parent can hand every
+  // card the same function reference (TES-99): a per-card closure built fresh
+  // each render would change identity every time, re-running this effect
+  // (unobserve + re-observe) on every unrelated re-render of the canvas.
   const elementRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    registerRef(elementRef.current);
-    return () => registerRef(null);
-  }, [registerRef]);
+    onRegisterRef(node.id, elementRef.current);
+    return () => onRegisterRef(node.id, null);
+  }, [onRegisterRef, node.id]);
 
   const isQueued = node.status === "draft";
   const isStreaming = node.status === "streaming";
