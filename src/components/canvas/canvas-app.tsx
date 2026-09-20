@@ -59,6 +59,28 @@ const LONG_PRESS_MS = 400;
 const TAP_MOVE_TOLERANCE_PX = 4;
 const MOBILE_QUERY = "(max-width: 767px)";
 
+/**
+ * The composer, the undo toast and anything else that floats over the canvas
+ * are rendered *inside* the surface element, because they are positioned
+ * against it. They are not the canvas, though, and a pointer landing on them
+ * is not a canvas gesture: the surface must not start a pan from it, must not
+ * `preventDefault` it (that is what stops a click from focusing the composer),
+ * and — the TES-74 bug — must not treat the pointer-up as the "click on empty
+ * canvas" that deselects.
+ *
+ * That deselect is why forking looked broken. Reply on node 2 binds the
+ * composer to node 2; the very next click, into the composer or on Send,
+ * bubbled here and cleared the selection, and §2.2's fallback rebound the
+ * composer to the most recent leaf — node 4. The reply then extended the
+ * series instead of branching. Nothing in the graph layer was wrong; the
+ * target had been silently reassigned before `send` ever read it.
+ */
+const CHROME_SELECTOR = '[data-canvas-role="chrome"]';
+
+function isOverCanvasChrome(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest(CHROME_SELECTOR) !== null;
+}
+
 function subscribeMobile(callback: () => void): () => void {
   const mql = window.matchMedia(MOBILE_QUERY);
   mql.addEventListener("change", callback);
@@ -336,6 +358,7 @@ export function CanvasApp({
 
   const handleSurfacePointerDown = (event: React.PointerEvent) => {
     if (isRootsEmpty) return; // §4.1: nothing to navigate yet
+    if (isOverCanvasChrome(event.target)) return; // composer/toast — not the canvas
     const overCard = (event.target as HTMLElement).closest('[data-node-role="card"]') !== null;
     const wantsPan = event.button === 1 || spaceHeldRef.current || (event.button === 0 && !overCard);
     if (!wantsPan) return;
@@ -908,6 +931,7 @@ export function CanvasApp({
 
             {!isRootsEmpty ? (
               <div
+                data-canvas-role="chrome"
                 style={{
                   position: "absolute",
                   left: "50%",
