@@ -391,6 +391,18 @@ export function useCanvasController(options: {
       const position = autoPlaceOnCreate(graphRef.current, parentId, widthFor(isMobile));
       const { graph: g2, node } = addNode(graphRef.current, { parentId, prompt, position });
       setGraph(g2);
+      // TES-59/61/62/63: `enqueueOrStart` below can call `beginStream` in this
+      // same synchronous tick, and `beginStream` reads `graphRef.current` (for
+      // `toMessages`) synchronously too — but the `useEffect` that mirrors
+      // `graph` into `graphRef` only runs after this event handler returns and
+      // React commits. Without this line, that read sees the graph from
+      // *before* `node` existed, `toMessages` → `requireNode` throws "No such
+      // node", and `streamChat`'s `fetch("/api/chat", ...)` is never reached —
+      // but the watchdog armed a few lines into `beginStream`, before the
+      // throw, fires 60s later regardless. That is the full "60s, zero bytes,
+      // nothing in any server or network log" symptom: the request never left
+      // the tab.
+      graphRef.current = g2;
       setSelectedNodeId(node.id);
       enqueueOrStart(node.id);
       return node.id;
