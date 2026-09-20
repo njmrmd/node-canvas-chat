@@ -1192,6 +1192,53 @@ export function CanvasApp({
               backgroundPosition: `${viewport.x}px ${viewport.y}px`,
             }}
           >
+            {/* §5.8: cyanotype paper + millimetre grid + grain. All three are
+             * `display: none` outside `prefers-color-scheme: dark` (canvas.css)
+             * — see that file's header note on why dark-chrome-only is a media
+             * query here rather than a class this component would have to
+             * compute. Rendered unconditionally, including the empty-canvas
+             * state, since the paper is the surface itself, not a decoration
+             * that waits for a first node. Purely decorative: aria-hidden,
+             * `pointerEvents: "none"`, and the paint order below the edges/
+             * node layers this file already z-indexes. */}
+            <div aria-hidden="true" className="cv-paper-layer" style={{ position: "absolute", inset: 0, pointerEvents: "none" }} />
+            <div
+              aria-hidden="true"
+              className="cv-mm-grid cv-mm-grid-major"
+              style={{
+                position: "absolute",
+                left: -16000,
+                top: -16000,
+                width: 32000,
+                height: 32000,
+                transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`,
+                transformOrigin: "0 0",
+                pointerEvents: "none",
+              }}
+            />
+            <div
+              aria-hidden="true"
+              className="cv-mm-grid cv-mm-grid-minor"
+              style={{
+                position: "absolute",
+                left: -16000,
+                top: -16000,
+                width: 32000,
+                height: 32000,
+                transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`,
+                transformOrigin: "0 0",
+                // §5.8: the minor rule reads as moiré below zoom 0.4 — same
+                // threshold the existing dot-grid above already fades out at.
+                opacity: viewport.zoom < 0.4 ? 0 : 1,
+                pointerEvents: "none",
+              }}
+            />
+            <div
+              aria-hidden="true"
+              className="cv-grain-layer"
+              style={{ position: "absolute", inset: 0, zIndex: "var(--z-grain)", pointerEvents: "none" }}
+            />
+
             {isRootsEmpty ? (
               <>
                 <EmptyCanvasContent
@@ -1255,6 +1302,7 @@ export function CanvasApp({
                             height: nodeHeights.get(node.id) ?? NODE_HEIGHT,
                           }}
                           state={state}
+                          pending={node.status === "draft" || node.status === "streaming"}
                         />
                       );
                     })}

@@ -218,6 +218,7 @@
   /* ---- §5.7 Z-layers ---------------------------------------------------- */
 
   --z-canvas: 0;
+  --z-grain: 1;
   --z-edges: 10;
   --z-node: 20;
   --z-node-selected: 30;
@@ -227,6 +228,31 @@
   --z-popover: 70;
   --z-toast: 80;
   --z-modal: 90;
+
+  /* ---- §5.8 Cyanotype canvas surface (TES-108, revision 6) --------------
+   *
+   * These `--cy-*` names are additions, not overrides — nothing above reads
+   * them, so defining them here is inert until something (`canvas.css`, the
+   * dark-mode-gated card/edge/paper rules TES-109 adds) opts in. That is
+   * deliberate: TES-108's own hexes are approved, but *shipping* the look is
+   * scoped to dark chrome only (§5.8's "open call" — the darker rev-2 paper
+   * makes a light-chrome seam worse, not better), and there is no live
+   * chrome-theme toggle in this app yet to key off of. `.canvas-surface`
+   * itself already defaults dark by `color-scheme` (see above) with the only
+   * live theme signal being the OS `prefers-color-scheme` media query that
+   * `globals.css` uses for the pre-canvas surface — so `canvas.css` gates the
+   * actual cyanotype paint under that same media query, rather than adding a
+   * second, unwired theme mechanism here.
+   */
+  --cy-paper: #0e273f;
+  --cy-paper-lift: #142e46;
+  --cy-paper-edge: #0b2237;
+  --cy-paper-deep: #05121f;
+
+  --cy-ink: #e3dcca; /* 11.12:1 on --cy-paper */
+  --cy-ink-soft: #b8bdaa; /* 7.89:1 */
+  --cy-ink-faint: #9fa8a3; /* 6.23:1 — kept non-text by design intent, not AA */
+  --cy-gold: #daae46; /* 7.33:1 — kept a rare accent by design intent, not AA */
 }
 
 /*

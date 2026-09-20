@@ -12,7 +12,8 @@
     "test": "node --import tsx --test \"src/**/*.test.ts\"",
     "test:e2e": "playwright test",
     "db:migrate": "node scripts/migrate.mjs",
-    "check:contrast": "node scripts/check-contrast.mjs"
+    "check:contrast": "node scripts/check-contrast.mjs",
+    "generate:canvas-grain": "node scripts/generate-canvas-grain.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.125.0",

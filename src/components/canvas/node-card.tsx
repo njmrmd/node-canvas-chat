@@ -270,7 +270,7 @@ export function NodeCard(props: NodeCardProps) {
         background: "var(--surface-1)",
         border: `1px solid ${node.status === "error" ? "var(--danger)" : "var(--border-default)"}`,
         borderRadius: "var(--radius-lg)",
-        boxShadow: props.isSelected ? "var(--shadow-2), inset 0 0 0 2px var(--accent)" : "var(--shadow-1)",
+        boxShadow: props.isSelected ? "var(--shadow-2), inset 0 0 0 2px var(--cv-select-ring)" : "var(--shadow-1)",
         padding: "var(--space-4)",
         cursor: "pointer",
         // Not `overflow: hidden` — the branch handle overhangs the bottom

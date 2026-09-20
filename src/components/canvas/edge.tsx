@@ -56,10 +56,16 @@ export function Edge({
   from,
   to,
   state,
+  pending,
 }: {
   from: EdgeRect;
   to: EdgeRect;
   state: "default" | "active" | "dimmed";
+  /** §5.8: the cyanotype canvas draws a wire dashed while the child it feeds
+   * is still pending/streaming and solid once it settles — `undefined`
+   * outside the cyanotype surface, where `canvas.css` never reads
+   * `data-pending` and every wire stays solid as it does today. */
+  pending?: boolean;
 }) {
   const path = edgePath(from, to);
 
@@ -71,6 +77,8 @@ export function Edge({
   return (
     <g className="cv-edge-highlight" style={{ opacity }}>
       <path
+        className="cv-edge-path"
+        data-pending={pending ? "true" : undefined}
         d={path}
         fill="none"
         stroke={stroke}
