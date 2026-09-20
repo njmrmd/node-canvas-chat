@@ -5,11 +5,13 @@ import {
   appendText,
   createGraph,
   moveNode,
+  placeNode,
   type ConversationGraph,
 } from "@/lib/conversation/graph";
 import {
   NODE_WIDTH_DESKTOP,
   autoPlaceOnCreate,
+  reflowChildrenOnCreate,
   tidyLayout,
   type NodeHeights,
   type NodeWidths,
@@ -25,6 +27,22 @@ const NO_WIDTHS: NodeWidths = new Map();
 function addAnswered(graph: ConversationGraph, id: string, parentId: string | null): ConversationGraph {
   const { graph: withNode } = addNode(graph, { id, parentId, prompt: "hi", position: ORIGIN });
   return appendText(withNode, id, "answer");
+}
+
+/** Mirrors the real create flow (TES-103): add the child at a throwaway
+ * position, then let `reflowChildrenOnCreate` place the whole row — the
+ * provisional position from `addNode` must never matter to the result. */
+function addAnsweredAndReflow(
+  graph: ConversationGraph,
+  id: string,
+  parentId: string,
+  width: number = WIDTH,
+  heights: NodeHeights = new Map(),
+  widths: NodeWidths = NO_WIDTHS,
+): ConversationGraph {
+  const { graph: withNode } = addNode(graph, { id, parentId, prompt: "hi", position: ORIGIN });
+  const reflowed = reflowChildrenOnCreate(withNode, parentId, width, heights, widths);
+  return appendText(reflowed, id, "answer");
 }
 
 function rectFor(
@@ -273,5 +291,137 @@ describe("autoPlaceOnCreate", () => {
     });
 
     assertNoOverlaps(withSibling, WIDTH, new Map(), widths);
+  });
+});
+
+describe("reflowChildrenOnCreate", () => {
+  it("TES-103: re-centers a growing sibling row — same y, evenly spaced, parent centered over the span", () => {
+    let graph = createGraph();
+    graph = addAnswered(graph, "root", null);
+    graph = addAnsweredAndReflow(graph, "c1", "root");
+    graph = addAnsweredAndReflow(graph, "c2", "root");
+    graph = addAnsweredAndReflow(graph, "c3", "root");
+
+    const xs = ["c1", "c2", "c3"].map((id) => graph.nodesById[id].position.x).sort((a, b) => a - b);
+    const ys = ["c1", "c2", "c3"].map((id) => graph.nodesById[id].position.y);
+
+    assert.equal(new Set(ys).size, 1, "every sibling of the same parent must share one y");
+    assert.equal(new Set(xs).size, 3, "siblings must not collapse onto the same x");
+
+    const gapA = xs[1] - xs[0];
+    const gapB = xs[2] - xs[1];
+    assert.equal(gapA, gapB, "siblings must be distributed evenly, not just non-overlapping");
+
+    const rootCenter = graph.nodesById.root.position.x + WIDTH / 2;
+    const spanCenter = (xs[0] + xs[2] + WIDTH) / 2;
+    assert.ok(
+      Math.abs(rootCenter - spanCenter) < 0.001,
+      `parent must be centered over its children's span (root center ${rootCenter}, span center ${spanCenter})`,
+    );
+  });
+
+  it("TES-103: adding a second child re-centers the pair under the parent instead of landing beside the first", () => {
+    let graph = createGraph();
+    graph = addAnswered(graph, "root", null);
+    graph = addAnsweredAndReflow(graph, "c1", "root");
+    const c1AfterFirst = graph.nodesById.c1.position.x;
+
+    graph = addAnsweredAndReflow(graph, "c2", "root");
+
+    // A single child sits directly under the parent; once it has a sibling,
+    // the pair must straddle that same center rather than c1 staying put and
+    // c2 simply landing beside it.
+    assert.notEqual(
+      graph.nodesById.c1.position.x,
+      c1AfterFirst,
+      "the first child must shift left to make room for its new sibling",
+    );
+    const rootCenter = graph.nodesById.root.position.x + WIDTH / 2;
+    const c1Center = graph.nodesById.c1.position.x + WIDTH / 2;
+    const c2Center = graph.nodesById.c2.position.x + WIDTH / 2;
+    assert.ok(
+      Math.abs(rootCenter - (c1Center + c2Center) / 2) < 0.001,
+      "the parent must stay centered over the pair",
+    );
+  });
+
+  it("TES-103: does not move the parent itself, only the row beneath it", () => {
+    let graph = createGraph();
+    graph = addAnswered(graph, "root", null);
+    graph = addAnsweredAndReflow(graph, "c1", "root");
+    const rootBefore = graph.nodesById.root.position;
+
+    graph = addAnsweredAndReflow(graph, "c2", "root");
+
+    assert.deepEqual(
+      graph.nodesById.root.position,
+      rootBefore,
+      "an unrelated reflow of the children row must not relocate the parent",
+    );
+  });
+
+  it("TES-103: does not reset the parent's y even when it disagrees with a fresh row-offset computation", () => {
+    // Regression: `layoutSubtree` (reused internally) also assigns the
+    // parent's own y from `offsets[depth]`, which is only right for a
+    // from-scratch Tidy pass. A parent whose real y doesn't happen to match
+    // that (any y other than a depth-0 node sitting at 0, which coincidentally
+    // matches `offsets[0]`) must keep its real y, not silently snap to it.
+    let graph = createGraph();
+    graph = addAnswered(graph, "root", null);
+    graph = placeNode(graph, "root", { x: 400, y: 237 });
+    graph = addAnsweredAndReflow(graph, "c1", "root");
+
+    assert.deepEqual(graph.nodesById.root.position, { x: 400, y: 237 });
+
+    graph = addAnsweredAndReflow(graph, "c2", "root");
+
+    assert.deepEqual(
+      graph.nodesById.root.position,
+      { x: 400, y: 237 },
+      "the parent's y must survive a second reflow unchanged",
+    );
+  });
+
+  it("TES-103: leaves a manually-dragged sibling exactly where it was", () => {
+    let graph = createGraph();
+    graph = addAnswered(graph, "root", null);
+    graph = addAnsweredAndReflow(graph, "c1", "root");
+    graph = moveNode(graph, "c1", { x: 999, y: 999 });
+
+    graph = addAnsweredAndReflow(graph, "c2", "root");
+
+    assert.deepEqual(graph.nodesById.c1.position, { x: 999, y: 999 });
+  });
+
+  it("TES-103: keeps every card non-overlapping across a 4-deep graph with mixed heights, built incrementally", () => {
+    let graph = createGraph();
+    const heights: NodeHeights = new Map([
+      ["root", 180],
+      ["a", 220],
+      ["b", 140],
+      ["a1", 96],
+      ["a2", 420],
+      ["a3", 200],
+      ["b1", 300],
+      ["a2x", 160],
+    ]);
+
+    graph = addAnswered(graph, "root", null);
+    graph = addAnsweredAndReflow(graph, "a", "root", WIDTH, heights);
+    graph = addAnsweredAndReflow(graph, "b", "root", WIDTH, heights);
+    graph = addAnsweredAndReflow(graph, "a1", "a", WIDTH, heights);
+    graph = addAnsweredAndReflow(graph, "a2", "a", WIDTH, heights);
+    graph = addAnsweredAndReflow(graph, "a3", "a", WIDTH, heights);
+    graph = addAnsweredAndReflow(graph, "b1", "b", WIDTH, heights);
+    // Depth 4: a grandchild of a grandchild of root.
+    graph = addAnsweredAndReflow(graph, "a2x", "a2", WIDTH, heights);
+
+    assertNoOverlaps(graph, WIDTH, heights);
+
+    const a1y = graph.nodesById.a1.position.y;
+    const a2y = graph.nodesById.a2.position.y;
+    const a3y = graph.nodesById.a3.position.y;
+    assert.equal(a1y, a2y);
+    assert.equal(a2y, a3y);
   });
 });

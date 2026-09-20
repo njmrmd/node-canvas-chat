@@ -183,6 +183,16 @@
   transition: opacity var(--dur-base) var(--ease-out), stroke var(--dur-base) var(--ease-out);
 }
 
+/* TES-102: the materialised port at each card's top/bottom centre. Same
+ * timing as the edge it terminates, so a wire and its endpoint never step
+ * out of sync when the active path changes. */
+.cv-port {
+  transition:
+    background var(--dur-base) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out),
+    opacity var(--dur-base) var(--ease-out);
+}
+
 .cv-focus-ring:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: var(--focus-ring-offset);
@@ -205,6 +215,7 @@
   .cv-resize-handle,
   .cv-node-actions,
   .cv-edge-highlight,
+  .cv-port,
   .cv-node-slot[data-animate="true"],
   .cv-world[data-animate="true"] {
     transition-duration: 0.001ms !important;

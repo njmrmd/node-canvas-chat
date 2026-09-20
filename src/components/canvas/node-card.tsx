@@ -8,8 +8,6 @@ import { copy } from "@/lib/canvas/copy";
 import { renderMarkdown } from "@/lib/canvas/markdown";
 
 /** §6 `<NodeCard>`. */
-export const NODE_WIDTH_DESKTOP = 320;
-export const NODE_WIDTH_MOBILE = 288;
 
 const FIRST_TOKEN_SLOW_MS = 8000;
 
@@ -111,7 +109,6 @@ export type NodeCardProps = {
   onFocusNode: () => void;
   onBranch: () => void;
   onRegenerate: () => void;
-  onEditSubmit: (text: string) => void;
   onDelete: () => void;
   onRetry: () => void;
   onRemove: () => void;
@@ -123,12 +120,18 @@ export type NodeCardProps = {
   onPointerDownResizeHandle: (event: React.PointerEvent) => void;
   onRegisterRef: (id: string, element: HTMLDivElement | null) => void;
   showFirstRunPulse: boolean;
+  /** TES-102: state of the inbound wire landing on this card's top port —
+   * mirrors the `state` the same edge is drawn with in `canvas-app.tsx`, so
+   * the port and its wire always agree. Unread for a root node, which has no
+   * inbound wire and renders no top port regardless of this value. */
+  portInboundState: "active" | "dimmed" | "default";
+  /** TES-102: true while an outbound wire leaving this card's bottom port is
+   * the active path — i.e. some child's inbound edge state is `"active"`. */
+  portOutboundActive: boolean;
 };
 
 export function NodeCard(props: NodeCardProps) {
   const { node, onRegisterRef } = props;
-  const [editing, setEditing] = useState(false);
-  const [editText, setEditText] = useState(node.prompt);
   const [now, setNow] = useState(() => Date.now());
 
   // `onRegisterRef` arrives as a prop, so it cannot be handed straight to the
@@ -249,12 +252,19 @@ export function NodeCard(props: NodeCardProps) {
       style={{
         position: "relative",
         width: props.width,
-        minHeight: 96,
+        // TES-101: floor matches `NODE_HEIGHT_MIN` (layout.ts) — the same
+        // "unreadably small" line applies whether a card got there by
+        // auto-sizing to a short reply or by manual resize.
+        minHeight: 120,
         // TES-90: a body-collapsed card always sizes to its one line,
         // regardless of any manual resize — showing a tall, mostly-empty
         // card would defeat the point of collapsing it.
         height: isBodyCollapsed ? undefined : (props.height ?? undefined),
-        maxHeight: isBodyCollapsed ? undefined : (props.height ?? 420),
+        // TES-101: default auto-size ceiling, raised from 420 so a long
+        // reply shows more of itself before scrolling — the case the "2x
+        // bigger" ask was actually about. Well under `NODE_HEIGHT_MAX`
+        // (900), so manual resize still has real headroom above it.
+        maxHeight: isBodyCollapsed ? undefined : (props.height ?? 640),
         display: "flex",
         flexDirection: "column",
         background: "var(--surface-1)",
@@ -295,22 +305,6 @@ export function NodeCard(props: NodeCardProps) {
               <IconButton label={copy("node.action.branch")} onClick={props.onBranch}>
                 <BranchIcon />
               </IconButton>
-              {node.status === "complete" ? (
-                <IconButton label={copy("node.action.regenerate")} onClick={props.onRegenerate}>
-                  <RegenerateIcon />
-                </IconButton>
-              ) : null}
-              {node.status !== "streaming" && node.status !== "draft" ? (
-                <IconButton
-                  label="Edit"
-                  onClick={() => {
-                    setEditText(node.prompt);
-                    setEditing(true);
-                  }}
-                >
-                  <EditIcon />
-                </IconButton>
-              ) : null}
               {/* TES-90: collapses this card's own body to one line — every
                * card gets this, unlike the subtree-collapse chevron below,
                * which only appears once there is a subtree to hide. A
@@ -355,65 +349,7 @@ export function NodeCard(props: NodeCardProps) {
           touchAction: "pan-y",
         }}
       >
-        {editing ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
-            <textarea
-              autoFocus
-              value={editText}
-              onChange={(event) => setEditText(event.target.value)}
-              onPointerDown={(event) => event.stopPropagation()}
-              onKeyDown={(event) => {
-                event.stopPropagation();
-                if (event.key === "Escape") setEditing(false);
-                if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
-                  props.onEditSubmit(editText);
-                  setEditing(false);
-                }
-              }}
-              style={{
-                font: "var(--text-sm)",
-                color: "var(--text-primary)",
-                background: "var(--surface-2)",
-                border: "1px solid var(--border-default)",
-                borderRadius: "var(--radius-sm)",
-                padding: "var(--space-2)",
-                resize: "vertical",
-                minHeight: 60,
-              }}
-            />
-            <div style={{ display: "flex", gap: "var(--space-2)" }}>
-              <button
-                type="button"
-                onPointerDown={(event) => event.stopPropagation()}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  props.onEditSubmit(editText);
-                  setEditing(false);
-                }}
-                style={{
-                  font: "var(--text-xs)",
-                  color: "var(--accent-fg)",
-                  background: "var(--accent)",
-                  borderRadius: "var(--radius-sm)",
-                  padding: "4px 10px",
-                }}
-              >
-                Save as new
-              </button>
-              <button
-                type="button"
-                onPointerDown={(event) => event.stopPropagation()}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  setEditing(false);
-                }}
-                style={{ font: "var(--text-xs)", color: "var(--text-secondary)" }}
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        ) : isBodyCollapsed ? (
+        {isBodyCollapsed ? (
           <p
             style={{
               font: "var(--text-sm)",
@@ -547,7 +483,55 @@ export function NodeCard(props: NodeCardProps) {
         </div>
       ) : null}
 
-      {/* Branch handle: bottom edge, 50% overhanging. */}
+      {/* Inbound port: top edge, centre — every card's wire in lands here,
+       * exactly, per TES-102. Purely structural (no click target), so it
+       * always renders when there's a wire to land, independent of hover.
+       * State mirrors the edge feeding it: accent + a soft ring while that
+       * wire is the active path, dimmed in step with it otherwise. */}
+      {node.parentId !== null ? (
+        <div
+          aria-hidden="true"
+          className="cv-port"
+          style={{
+            position: "absolute",
+            left: "50%",
+            top: -4,
+            transform: "translateX(-50%)",
+            width: 8,
+            height: 8,
+            borderRadius: "var(--radius-full)",
+            background: props.portInboundState === "active" ? "var(--accent)" : "var(--border-strong)",
+            boxShadow: props.portInboundState === "active" ? "0 0 0 3px var(--accent-soft)" : undefined,
+            opacity: props.portInboundState === "dimmed" ? 0.35 : 1,
+            pointerEvents: "none",
+          }}
+        />
+      ) : null}
+
+      {/* Outbound port + branch handle: bottom edge, centre, 50% overhanging.
+       * TES-102 asks for one materialised point every outbound wire is seen
+       * to leave from — this is also, already, where the branch-create
+       * button lives, so rather than ship two overlapping circles at the
+       * same coordinate the button *is* the port's interactive state: a
+       * small dot marks the point at rest, and the existing hover/focus-
+       * revealed "+" button (same centre, larger, opaque) covers it
+       * completely once shown. One control, one location. */}
+      <div
+        aria-hidden="true"
+        className="cv-port"
+        style={{
+          position: "absolute",
+          left: "50%",
+          bottom: -4,
+          transform: "translateX(-50%)",
+          width: 8,
+          height: 8,
+          borderRadius: "var(--radius-full)",
+          background: props.portOutboundActive ? "var(--accent)" : "var(--border-strong)",
+          boxShadow: props.portOutboundActive ? "0 0 0 3px var(--accent-soft)" : undefined,
+          pointerEvents: "none",
+        }}
+      />
       <div
         style={{
           position: "absolute",
@@ -573,8 +557,11 @@ export function NodeCard(props: NodeCardProps) {
             width: 28,
             height: 28,
             borderRadius: "var(--radius-full)",
-            background: "var(--surface-3)",
-            border: "1px solid var(--border-strong)",
+            // TES-102: the button sits directly over the port dot and
+            // covers it once revealed — carrying the active-path tint here
+            // too means hovering to branch doesn't make that signal vanish.
+            background: props.portOutboundActive ? "var(--accent-soft)" : "var(--surface-3)",
+            border: `1px solid ${props.portOutboundActive ? "var(--accent)" : "var(--border-strong)"}`,
             color: "var(--text-secondary)",
             opacity: props.canBranch ? undefined : 0.4,
             cursor: props.canBranch ? "pointer" : "not-allowed",
@@ -626,20 +613,6 @@ function BranchIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
       <path d="M5 3v4a2 2 0 0 0 2 2h2a2 2 0 0 1 2 2v2M5 3a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3ZM11 11a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Z" stroke="currentColor" strokeWidth="1.3" />
-    </svg>
-  );
-}
-function RegenerateIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <path d="M13 4.5V7h-2.5M3 11.5V9h2.5M4 7a4 4 0 0 1 7-2.5l2 1.5M12 9a4 4 0 0 1-7 2.5l-2-1.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-function EditIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <path d="M11.5 2.5 13.5 4.5 5 13H3v-2L11.5 2.5Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
     </svg>
   );
 }

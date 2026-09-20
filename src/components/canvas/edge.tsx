@@ -1,17 +1,26 @@
 "use client";
 
 /**
- * §6 `<Edge>`: one cubic bezier, anchored to whichever sides actually face
- * each other (TES-91).
+ * §6 `<Edge>`: one cubic bezier, anchored the same way at every distance
+ * (TES-102, reverses the side-anchor branch shipped in TES-91). Outbound is
+ * always bottom-centre of the parent; inbound is always top-centre of the
+ * child — never a side, no matter how far sideways the child sits. That
+ * consistency is what makes the materialised port on `<NodeCard>` mean
+ * something: it is one point, always the same point, and every wire this
+ * card ever sends out is seen leaving from it.
  *
- * A child whose card horizontally overlaps its parent's — the common single-
- * thread continuation — still reads top-to-bottom: bottom-centre → top-
- * centre. Every other case (a fork: the first branch stays under the parent
- * but every later sibling is auto-placed beside it, per `autoPlaceOnCreate`)
- * has no horizontal overlap, so the edge leaves the side of the parent that
- * actually faces the child and enters the facing side of the child. That is
- * what makes a fork's line touch the exact card it came from instead of
- * sweeping down past whatever else sits between the two columns.
+ * The hard part TES-91 got right: a child placed far sideways from its
+ * parent, drawn with control points offset only vertically from their own
+ * anchor, still needs to read as one clean curve rather than bulge or loop.
+ * The fix is the control points D3's `linkVertical` uses — both sit at the
+ * vertical midpoint between the two anchors (`fromPoint.x` paired with
+ * `midY`, `toPoint.x` paired with the same `midY`). Because each control
+ * point shares its anchor's x, the curve's tangent at both ends is exactly
+ * vertical regardless of how large the horizontal gap is — that is what
+ * "leaves the bottom" and "arrives at the top" require. And because neither
+ * control point can cross past the other anchor's y (they're pinned to the
+ * midpoint, never past it), the curve can't double back on itself: no
+ * overshoot, no loop, at any dx.
  *
  * The two arrowhead markers this needs are defined once, by
  * `<EdgeMarkerDefs>`, in the parent SVG's own `<defs>` — an per-edge `<defs>`
@@ -21,25 +30,13 @@
 
 export type EdgeRect = { x: number; y: number; width: number; height: number };
 
-function horizontallyOverlaps(a: EdgeRect, b: EdgeRect): boolean {
-  return a.x < b.x + b.width && a.x + a.width > b.x;
-}
-
 /** Pure geometry, exported for `edge.test.ts` — no anchor decision belongs
  * only inside JSX where it can't be unit-tested. */
 export function edgePath(from: EdgeRect, to: EdgeRect): string {
-  if (horizontallyOverlaps(from, to)) {
-    const fromPoint = { x: from.x + from.width / 2, y: from.y + from.height };
-    const toPoint = { x: to.x + to.width / 2, y: to.y };
-    const controlOffset = (toPoint.y - fromPoint.y) * 0.4;
-    return `M ${fromPoint.x} ${fromPoint.y} C ${fromPoint.x} ${fromPoint.y + controlOffset}, ${toPoint.x} ${toPoint.y - controlOffset}, ${toPoint.x} ${toPoint.y}`;
-  }
-
-  const toIsRight = to.x >= from.x + from.width;
-  const fromPoint = { x: toIsRight ? from.x + from.width : from.x, y: from.y + from.height / 2 };
-  const toPoint = { x: toIsRight ? to.x : to.x + to.width, y: to.y + to.height / 2 };
-  const controlOffset = (toPoint.x - fromPoint.x) * 0.5;
-  return `M ${fromPoint.x} ${fromPoint.y} C ${fromPoint.x + controlOffset} ${fromPoint.y}, ${toPoint.x - controlOffset} ${toPoint.y}, ${toPoint.x} ${toPoint.y}`;
+  const fromPoint = { x: from.x + from.width / 2, y: from.y + from.height };
+  const toPoint = { x: to.x + to.width / 2, y: to.y };
+  const midY = (fromPoint.y + toPoint.y) / 2;
+  return `M ${fromPoint.x} ${fromPoint.y} C ${fromPoint.x} ${midY}, ${toPoint.x} ${midY}, ${toPoint.x} ${toPoint.y}`;
 }
 
 export function EdgeMarkerDefs() {

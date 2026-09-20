@@ -24,6 +24,7 @@ import { ShortcutsSheet } from "@/components/canvas/shortcuts-sheet";
 import { Toast } from "@/components/canvas/toast";
 import { copy } from "@/lib/canvas/copy";
 import {
+  addNode,
   childIds,
   descendantIds,
   pathToRoot,
@@ -35,6 +36,7 @@ import {
   focusOn,
   panToLowerThird,
   rectInView,
+  screenToCanvas,
   zoomAt,
   ZOOM_STEP_FACTOR,
   type Viewport,
@@ -47,6 +49,8 @@ import {
   NODE_WIDTH_MAX,
   NODE_WIDTH_MIN,
   NODE_WIDTH_MOBILE,
+  nodeWidthsFrom,
+  reflowChildrenOnCreate,
 } from "@/lib/canvas/layout";
 import { routeWheelEvent } from "@/lib/canvas/wheel-routing";
 import type { ModelSpec } from "@/lib/providers/registry";
@@ -182,7 +186,20 @@ export function CanvasApp({
    * an epsilon so a card streaming tokens doesn't re-render every frame. */
   const [nodeHeights, setNodeHeights] = useState(() => new Map<string, number>());
   const nodeHeightsFrameRef = useRef<number | null>(null);
-  const controller = useCanvasController({ provider: "anthropic", model, isMobile, nodeHeightsRef });
+  /** TES-103 item 2: canvas-space center of the visible content area, read
+   * by the controller only at node-create time (never during render — see
+   * `visibleCenter`/the effect that fills this in, further down, for the
+   * render-safe version). Declared before the controller call so the same
+   * stable ref object can be handed in here and populated later; only its
+   * `.current` needs to be current by the time a node is actually created. */
+  const visibleCenterRef = useRef({ x: 0, y: 0 });
+  const controller = useCanvasController({
+    provider: "anthropic",
+    model,
+    isMobile,
+    nodeHeightsRef,
+    visibleCenterRef,
+  });
   const {
     graph,
     viewport,
@@ -402,6 +419,19 @@ export function CanvasApp({
     }),
     [viewportSize.width, viewportSize.height, composerReservedHeight],
   );
+
+  /** TES-103 item 2: canvas-space point under the center of the visible
+   * content area above — the render-safe counterpart to `visibleCenterRef`.
+   * A plain `useMemo`, safe to read during render (the skeleton preview
+   * below does); mirrored into the ref via effect for the controller, which
+   * reads it outside render, at create time. */
+  const visibleCenter = useMemo(
+    () => screenToCanvas(viewport, { x: contentViewportSize.width / 2, y: contentViewportSize.height / 2 }),
+    [viewport, contentViewportSize],
+  );
+  useEffect(() => {
+    visibleCenterRef.current = visibleCenter;
+  }, [visibleCenter]);
 
   const zoomToFit = useCallback(() => {
     const bounds = graphBounds(graphRef.current, nodeWidth);
@@ -985,6 +1015,62 @@ export function CanvasApp({
     );
   });
 
+  // TES-102: state of the inbound edge landing on each visible node, keyed
+  // by the child (there is exactly one inbound edge per node). Computed once
+  // here — rather than inline in the `<Edge>` map below — so the same value
+  // also drives the materialised port on `<NodeCard>`; a port and the wire
+  // it terminates must always agree, and a single source of truth is what
+  // guarantees that instead of two copies of this ternary drifting apart.
+  const edgeStateByChildId = new Map<string, "active" | "dimmed" | "default">();
+  for (const id of visibleIds) {
+    const node = graph.nodesById[id];
+    if (!node.parentId || hiddenByCollapse.has(node.parentId)) continue;
+    const parent = graph.nodesById[node.parentId];
+    const onPath = highlightedPath.has(node.id) && highlightedPath.has(parent.id);
+    edgeStateByChildId.set(
+      id,
+      node.status === "streaming" ? "active" : onPath ? "active" : (focusPathMode || selectedNodeId) ? "dimmed" : "default",
+    );
+  }
+  // A card's outbound port is "active" when the one child on the highlighted
+  // path currently reads that way — i.e. some child's inbound state is
+  // itself active.
+  const activeOutboundParentIds = new Set(
+    [...edgeStateByChildId.entries()]
+      .filter(([, state]) => state === "active")
+      .map(([childId]) => graph.nodesById[childId].parentId)
+      .filter((id): id is string => id !== null),
+  );
+
+  /** TES-103 item 5: where the *next* branch will land, computed from the
+   * moment the composer is bound rather than waiting for a send — reuses
+   * `reflowChildrenOnCreate`, the same placement `createAndStream`
+   * (`use-canvas-controller.ts`) uses for the real node, so the skeleton can
+   * never land somewhere the real card then doesn't. `null` whenever nothing
+   * would actually be created right now (composer disabled, or the canvas is
+   * still on the empty/starter state — that screen already has its own
+   * centered headline and starter chips, and a dashed card behind them would
+   * compete with that layout rather than preview anything; scoped to the
+   * Branch flow the ticket's complaint was actually about). */
+  const previewNodePosition = (() => {
+    if (!hasProvider || composerDisabledReason || isRootsEmpty) return null;
+    if (!effectiveComposerTarget) return null;
+    const { graph: withPreview } = addNode(graph, {
+      id: "__tes103_preview__",
+      parentId: effectiveComposerTarget,
+      prompt: "",
+      position: { x: 0, y: 0 },
+    });
+    const reflowed = reflowChildrenOnCreate(
+      withPreview,
+      effectiveComposerTarget,
+      nodeWidth,
+      nodeHeights,
+      nodeWidthsFrom(withPreview, nodeWidth),
+    );
+    return reflowed.nodesById.__tes103_preview__.position;
+  })();
+
   const composerTargetNode = effectiveComposerTarget ? graph.nodesById[effectiveComposerTarget] : null;
   const composerTargetLabel = composerTargetNode
     ? `Node ${graph.nodeIds.indexOf(composerTargetNode.id) + 1}`
@@ -1152,9 +1238,7 @@ export function CanvasApp({
                       const node = graph.nodesById[id];
                       if (!node.parentId || hiddenByCollapse.has(node.parentId)) return null;
                       const parent = graph.nodesById[node.parentId];
-                      const onPath = highlightedPath.has(node.id) && highlightedPath.has(parent.id);
-                      const state =
-                        node.status === "streaming" ? "active" : onPath ? "active" : (focusPathMode || selectedNodeId) ? "dimmed" : "default";
+                      const state = edgeStateByChildId.get(id) ?? "default";
                       return (
                         <Edge
                           key={id}
@@ -1220,7 +1304,6 @@ export function CanvasApp({
                             requestAnimationFrame(() => composerRef.current?.focus());
                           }}
                           onRegenerate={() => controller.regenerate(id)}
-                          onEditSubmit={(text) => controller.editSubmit(id, text)}
                           onDelete={() => controller.requestDelete(id)}
                           onRetry={() => controller.retry(id)}
                           onRemove={() => controller.removeErrorNode(id)}
@@ -1234,10 +1317,39 @@ export function CanvasApp({
                           showFirstRunPulse={
                             !hasBranchedOnce && node.parentId === null && node.status === "complete"
                           }
+                          portInboundState={edgeStateByChildId.get(id) ?? "default"}
+                          portOutboundActive={activeOutboundParentIds.has(id)}
                         />
                       </div>
                     );
                   })}
+                  {previewNodePosition ? (
+                    <div
+                      className="cv-node-slot"
+                      aria-hidden="true"
+                      style={{
+                        transform: `translate(${previewNodePosition.x}px, ${previewNodePosition.y}px)`,
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: nodeWidth,
+                          minHeight: 120,
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "var(--space-2)",
+                          padding: "var(--space-4)",
+                          borderRadius: "var(--radius-lg)",
+                          border: "1px dashed var(--border-default)",
+                          pointerEvents: "none",
+                        }}
+                      >
+                        <div className="cv-skeleton-bar" style={{ height: 10, width: "40%", borderRadius: "var(--radius-full)" }} />
+                        <div className="cv-skeleton-bar" style={{ height: 10, width: "100%", borderRadius: "var(--radius-full)" }} />
+                        <div className="cv-skeleton-bar" style={{ height: 10, width: "70%", borderRadius: "var(--radius-full)" }} />
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               </>
             )}

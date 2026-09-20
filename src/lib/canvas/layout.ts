@@ -56,8 +56,19 @@ export function nodeWidthsFrom(
  * as a follow-up rather than shipped as silently exact.
  */
 
-export const NODE_WIDTH_DESKTOP = 320;
-export const NODE_WIDTH_MOBILE = 288;
+/** TES-101: "2x bigger" taken literally (640/576) either pins every card at
+ * `NODE_WIDTH_MAX` with no manual-resize headroom left, or doesn't fit a
+ * 390px phone at all. The actual complaint — long replies need squinting —
+ * is an area problem, and column width past ~75 characters gets harder to
+ * read, not easier, so width alone is the wrong lever. Desktop gets a
+ * moderate bump (content width ~53–59 characters/line, mid-range instead of
+ * the previous ~36–41); mobile gets a smaller, independent bump sized to
+ * still leave real margin on a 390px viewport rather than inheriting
+ * whatever a doubling clamp would produce. The rest of the "2x" is carried
+ * by a taller default auto-size ceiling (`node-card.tsx`), since that's
+ * what actually shows more of a long reply without scrolling. */
+export const NODE_WIDTH_DESKTOP = 460;
+export const NODE_WIDTH_MOBILE = 344;
 /** Nominal card height for layout math. Real cards vary 96–420px; §2.4 gives
  * no placement rule for that, so this is the smallest sensible constant. */
 const NODE_HEIGHT = 160;
@@ -165,6 +176,116 @@ export function autoPlaceOnCreate(
   }
 
   return { x, y };
+}
+
+/**
+ * TES-103 item 2: centers the very first node in the visible content area
+ * rather than leaving it at `autoPlaceOnCreate`'s `{x: 0, y: 0}` default,
+ * which has no relationship to what's actually on screen. `visibleCenter` is
+ * a canvas-space point — the caller converts its own screen-space visible
+ * rect (the same one auto-follow already computes) via `screenToCanvas`
+ * before calling this, so this function stays free of viewport concerns.
+ */
+export function centeredRootPosition(
+  visibleCenter: Point,
+  width: number = NODE_WIDTH_DESKTOP,
+  height: number = NODE_HEIGHT,
+): Point {
+  return { x: visibleCenter.x - width / 2, y: visibleCenter.y - height / 2 };
+}
+
+/**
+ * TES-103: the mindmap invariant — "siblings of one parent sit at the same
+ * `y`, distributed evenly across that row, with the parent centered over
+ * them" — applied as the *default* on every new child, not just on an
+ * explicit Tidy. `autoPlaceOnCreate` above only ever finds the new card a
+ * clear spot; it never moves what already exists, so a second child landed
+ * beside the first instead of the pair re-centring under the parent.
+ *
+ * Two ways to get the invariant: re-run the full Tidy pass over the whole
+ * graph on every create, or reflow just the affected row and what hangs
+ * below it. Full Tidy is simpler but wrong here — it would shift unrelated
+ * branches (other root conversations, cousins the user isn't looking at)
+ * out from under the user mid-conversation. This takes the local option:
+ * call this *after* the new node has been added as a child of `parentId`,
+ * and it repositions only `parentId`'s own subtree.
+ */
+export function reflowChildrenOnCreate(
+  graph: ConversationGraph,
+  parentId: string,
+  width: number = NODE_WIDTH_DESKTOP,
+  heights: NodeHeights = NO_HEIGHTS,
+  widths: NodeWidths = NO_WIDTHS,
+): ConversationGraph {
+  const parent = graph.nodesById[parentId];
+  if (!parent) return graph;
+
+  const parentDepth = depthsByNode(graph).get(parentId) ?? 0;
+  const offsets = rowOffsets(graph, heights);
+  const writes = new Map<string, Point>();
+  const result = layoutSubtree(graph, parentId, parentDepth, width, offsets, writes, widths);
+
+  // `layoutSubtree` lays the subtree out in its own local frame, starting
+  // near x = 0 — shift the whole thing so the parent stays exactly where it
+  // already was. Only the children (and their subtrees) move; the parent
+  // itself, and everything outside this subtree, does not jump around the
+  // canvas just because one of its descendants gained a sibling.
+  const anchorShift = parent.position.x - result.position.x;
+  shiftSubtreeWrites(graph, parentId, anchorShift, writes);
+  // `shiftSubtreeWrites` only corrects x. `layoutSubtree` also assigns the
+  // parent's own y from `offsets[parentDepth]` — correct for a fresh
+  // whole-tree Tidy, but here the parent already has a real y that may not
+  // match a row offset recomputed from scratch (a manually-placed parent, or
+  // one whose row's tallest card changed since it was placed). Force the
+  // parent's write back to its exact current position on both axes: this
+  // reflow's contract is that only children move.
+  writes.set(parentId, parent.position);
+
+  // Safety net: this reflow only ever spaces the row against itself, so it
+  // has no idea whether an unrelated branch elsewhere in the graph now sits
+  // under it — the same blind spot `autoPlaceOnCreate`'s old collision loop
+  // existed for. Slide the whole reflowed group sideways as one rigid block
+  // (preserving the even spacing / centering just computed) until it clears
+  // every node outside the group.
+  const reflowedIds = new Set(writes.keys());
+  const outside = graph.nodeIds
+    .filter((id) => !reflowedIds.has(id))
+    .map((id) => ({
+      position: graph.nodesById[id].position,
+      height: heightOf(heights, id),
+      width: widthOf(widths, id, width),
+    }));
+
+  const overlapsOutsideAt = (extraShift: number): boolean =>
+    outside.some((o) =>
+      Array.from(writes.entries()).some(([id, position]) =>
+        rectsOverlap(
+          {
+            x: position.x + extraShift,
+            y: position.y,
+            width: widthOf(widths, id, width),
+            height: heightOf(heights, id),
+          },
+          { x: o.position.x, y: o.position.y, width: o.width, height: o.height },
+        ),
+      ),
+    );
+
+  let extraShift = 0;
+  while (overlapsOutsideAt(extraShift)) {
+    extraShift += width + H_GAP;
+  }
+  if (extraShift !== 0) {
+    for (const [id, position] of writes) {
+      writes.set(id, { x: position.x + extraShift, y: position.y });
+    }
+  }
+
+  let next = graph;
+  for (const [nodeId, position] of writes) {
+    next = placeNode(next, nodeId, position);
+  }
+  return next;
 }
 
 type TidyResult = { position: Point; subtreeWidth: number };

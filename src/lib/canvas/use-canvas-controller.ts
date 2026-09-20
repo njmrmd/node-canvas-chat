@@ -40,7 +40,9 @@ import {
   NODE_WIDTH_DESKTOP,
   NODE_WIDTH_MOBILE,
   autoPlaceOnCreate,
+  centeredRootPosition,
   nodeWidthsFrom,
+  reflowChildrenOnCreate,
   tidyLayout,
   type NodeHeights,
 } from "@/lib/canvas/layout";
@@ -139,8 +141,14 @@ export function useCanvasController(options: {
    * it current. Optional so a controller built without a canvas (e.g. a
    * future test) still lays out against the nominal `NODE_HEIGHT`. */
   nodeHeightsRef?: { current: NodeHeights };
+  /** TES-103 item 2: the canvas-space point under the center of the visible
+   * content area, same idea as `nodeHeightsRef` — owned by the canvas
+   * component (it already computes this rect for auto-follow) and read here
+   * only at create time, synchronously, never during render. Optional so a
+   * controller built without a canvas still works, just without centering. */
+  visibleCenterRef?: { current: Point };
 }) {
-  const { provider, model, isMobile, nodeHeightsRef } = options;
+  const { provider, model, isMobile, nodeHeightsRef, visibleCenterRef } = options;
 
   const [graph, setGraph] = useState<ConversationGraph>({
     nodesById: {},
@@ -401,14 +409,30 @@ export function useCanvasController(options: {
   const createAndStream = useCallback(
     (parentId: string | null, prompt: string) => {
       const defaultWidth = widthFor(isMobile);
-      const position = autoPlaceOnCreate(
-        graphRef.current,
-        parentId,
-        defaultWidth,
-        nodeHeightsRef?.current ?? NO_HEIGHTS,
-        nodeWidthsFrom(graphRef.current, defaultWidth),
-      );
-      const { graph: g2, node } = addNode(graphRef.current, { parentId, prompt, position });
+      const heights = nodeHeightsRef?.current ?? NO_HEIGHTS;
+      const isFirstRoot = parentId === null && graphRef.current.nodeIds.length === 0;
+      // TES-103 item 2: the very first node centers in the visible content
+      // area instead of landing at `autoPlaceOnCreate`'s `{0, 0}` default —
+      // falls back to the old corner placement if the canvas hasn't measured
+      // a visible area yet (e.g. a controller built without one).
+      const position =
+        isFirstRoot && visibleCenterRef
+          ? centeredRootPosition(visibleCenterRef.current, defaultWidth)
+          : autoPlaceOnCreate(
+              graphRef.current,
+              parentId,
+              defaultWidth,
+              heights,
+              nodeWidthsFrom(graphRef.current, defaultWidth),
+            );
+      const { graph: added, node } = addNode(graphRef.current, { parentId, prompt, position });
+      // TES-103 item 9: a child's whole sibling row re-centers under its
+      // parent by default now, rather than the new card just squeezing into
+      // whatever free slot `autoPlaceOnCreate` found it. Roots have no parent
+      // to center under, so they keep the plain placement above.
+      const g2 = parentId !== null
+        ? reflowChildrenOnCreate(added, parentId, defaultWidth, heights, nodeWidthsFrom(added, defaultWidth))
+        : added;
       setGraph(g2);
       // TES-59/61/62/63: `enqueueOrStart` below can call `beginStream` in this
       // same synchronous tick, and `beginStream` reads `graphRef.current` (for
@@ -426,7 +450,7 @@ export function useCanvasController(options: {
       enqueueOrStart(node.id);
       return node.id;
     },
-    [isMobile, enqueueOrStart, nodeHeightsRef],
+    [isMobile, enqueueOrStart, nodeHeightsRef, visibleCenterRef],
   );
 
   const send = useCallback(
@@ -447,15 +471,6 @@ export function useCanvasController(options: {
       const node = graphRef.current.nodesById[nodeId];
       if (!node) return;
       createAndStream(node.parentId, node.prompt);
-    },
-    [createAndStream],
-  );
-
-  const editSubmit = useCallback(
-    (nodeId: string, newPrompt: string) => {
-      const node = graphRef.current.nodesById[nodeId];
-      if (!node) return;
-      createAndStream(node.parentId, newPrompt.trim());
     },
     [createAndStream],
   );
@@ -594,7 +609,6 @@ export function useCanvasController(options: {
     send,
     branch,
     regenerate,
-    editSubmit,
     retry,
     continueNode,
     stop,
