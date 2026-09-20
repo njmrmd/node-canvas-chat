@@ -312,10 +312,10 @@
  * layer/one element rather than needing their own fade logic. */
 .cv-mm-grid-major {
   background-image:
-    repeating-linear-gradient(to right, rgba(227, 220, 202, 0.14) 0, rgba(227, 220, 202, 0.14) 1px, transparent 1px, transparent 80px),
-    repeating-linear-gradient(to bottom, rgba(227, 220, 202, 0.14) 0, rgba(227, 220, 202, 0.14) 1px, transparent 1px, transparent 80px),
-    repeating-linear-gradient(to right, rgba(227, 220, 202, 0.09) 0, rgba(227, 220, 202, 0.09) 1px, transparent 1px, transparent 40px),
-    repeating-linear-gradient(to bottom, rgba(227, 220, 202, 0.09) 0, rgba(227, 220, 202, 0.09) 1px, transparent 1px, transparent 40px);
+    repeating-linear-gradient(to right, rgba(227, 220, 202, 0.07) 0, rgba(227, 220, 202, 0.07) 1px, transparent 1px, transparent 80px),
+    repeating-linear-gradient(to bottom, rgba(227, 220, 202, 0.07) 0, rgba(227, 220, 202, 0.07) 1px, transparent 1px, transparent 80px),
+    repeating-linear-gradient(to right, rgba(227, 220, 202, 0.045) 0, rgba(227, 220, 202, 0.045) 1px, transparent 1px, transparent 40px),
+    repeating-linear-gradient(to bottom, rgba(227, 220, 202, 0.045) 0, rgba(227, 220, 202, 0.045) 1px, transparent 1px, transparent 40px);
 }
 
 /* Minor ("1mm", 8px) — `canvas-app.tsx` fades this one to `opacity: 0`
@@ -323,8 +323,8 @@
  * that fade a fade instead of a pop. */
 .cv-mm-grid-minor {
   background-image:
-    repeating-linear-gradient(to right, rgba(227, 220, 202, 0.04) 0, rgba(227, 220, 202, 0.04) 1px, transparent 1px, transparent 8px),
-    repeating-linear-gradient(to bottom, rgba(227, 220, 202, 0.04) 0, rgba(227, 220, 202, 0.04) 1px, transparent 1px, transparent 8px);
+    repeating-linear-gradient(to right, rgba(227, 220, 202, 0.02) 0, rgba(227, 220, 202, 0.02) 1px, transparent 1px, transparent 8px),
+    repeating-linear-gradient(to bottom, rgba(227, 220, 202, 0.02) 0, rgba(227, 220, 202, 0.02) 1px, transparent 1px, transparent 8px);
   transition: opacity var(--dur-base) var(--ease-out);
 }
 
