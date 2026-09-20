@@ -382,6 +382,31 @@ describe("reflowChildrenOnCreate", () => {
     );
   });
 
+  it("TES-106: a child of a non-zero-y root still renders below its parent", () => {
+    // Regression: `centeredRootPosition` (TES-103) can park the very first
+    // node anywhere in the viewport, not just y=0. `layoutSubtree` computes
+    // every descendant's y as a cumulative offset that assumes the subtree
+    // root sits at y=0, and the old code only re-based the *parent's* write
+    // back onto its real position afterward — never the children's. That let
+    // a first reply render above its own question whenever the root's real y
+    // was bigger than the reflow's assumed row-0 offset (e.g. root centered
+    // at y=342: child came out at y=217).
+    let graph = createGraph();
+    graph = addAnswered(graph, "root", null);
+    graph = placeNode(graph, "root", { x: 0, y: 342 });
+    graph = addAnsweredAndReflow(graph, "c1", "root", WIDTH, new Map([["root", 160]]));
+
+    assert.ok(
+      graph.nodesById.c1.position.y > graph.nodesById.root.position.y,
+      `child must render below its parent (root y=${graph.nodesById.root.position.y}, child y=${graph.nodesById.c1.position.y})`,
+    );
+    assert.equal(
+      graph.nodesById.c1.position.y,
+      graph.nodesById.root.position.y + 160 + 72,
+      "child y must be exactly the parent's real y plus the parent's height plus V_GAP",
+    );
+  });
+
   it("TES-103: leaves a manually-dragged sibling exactly where it was", () => {
     let graph = createGraph();
     graph = addAnswered(graph, "root", null);

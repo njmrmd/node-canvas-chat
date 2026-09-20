@@ -231,14 +231,18 @@ export function reflowChildrenOnCreate(
   // itself, and everything outside this subtree, does not jump around the
   // canvas just because one of its descendants gained a sibling.
   const anchorShift = parent.position.x - result.position.x;
-  shiftSubtreeWrites(graph, parentId, anchorShift, writes);
-  // `shiftSubtreeWrites` only corrects x. `layoutSubtree` also assigns the
-  // parent's own y from `offsets[parentDepth]` — correct for a fresh
-  // whole-tree Tidy, but here the parent already has a real y that may not
-  // match a row offset recomputed from scratch (a manually-placed parent, or
-  // one whose row's tallest card changed since it was placed). Force the
-  // parent's write back to its exact current position on both axes: this
-  // reflow's contract is that only children move.
+  // TES-106: `layoutSubtree` also assigns the parent's own y from
+  // `offsets[parentDepth]`, on the assumption that the subtree root sits
+  // exactly at that row offset. It usually doesn't — `centeredRootPosition`
+  // (TES-103) can park the very first node anywhere in the viewport, and any
+  // manually-placed or previously-reflowed parent carries its own real y too.
+  // Re-base every write in the subtree (parent included, even though the
+  // parent's write gets forced back below) by that same delta so children
+  // land relative to the parent's *actual* position, not an assumed row 0.
+  const verticalShift = parent.position.y - offsets[parentDepth];
+  shiftSubtreeWrites(graph, parentId, anchorShift, verticalShift, writes);
+  // Force the parent's write back to its exact current position on both
+  // axes: this reflow's contract is that only children move.
   writes.set(parentId, parent.position);
 
   // Safety net: this reflow only ever spaces the row against itself, so it
@@ -334,7 +338,7 @@ function layoutSubtree(
     // room so auto siblings don't land on top of it.
     const shift = cursor - result.position.x;
     if (childNode.positionMode !== "manual") {
-      shiftSubtreeWrites(graph, childId, shift, writes);
+      shiftSubtreeWrites(graph, childId, shift, 0, writes);
     }
     const shiftedX = childNode.positionMode !== "manual" ? cursor : result.position.x;
     childResults.push({ position: { x: shiftedX, y: result.position.y }, subtreeWidth: result.subtreeWidth });
@@ -383,7 +387,7 @@ export function tidyLayout(
     // Shift this root's whole subtree so roots never overlap horizontally.
     const shift = cursor - result.position.x;
     if (graph.nodesById[rootId].positionMode !== "manual") {
-      shiftSubtreeWrites(graph, rootId, shift, writes);
+      shiftSubtreeWrites(graph, rootId, shift, 0, writes);
     }
     cursor += result.subtreeWidth + H_GAP;
   }
@@ -398,13 +402,14 @@ export function tidyLayout(
 function shiftSubtreeWrites(
   graph: ConversationGraph,
   nodeId: string,
-  shift: number,
+  dx: number,
+  dy: number,
   writes: Map<string, Point>,
 ): void {
   const current = writes.get(nodeId);
-  if (current) writes.set(nodeId, { x: current.x + shift, y: current.y });
+  if (current) writes.set(nodeId, { x: current.x + dx, y: current.y + dy });
   for (const childId of childIds(graph, nodeId)) {
-    shiftSubtreeWrites(graph, childId, shift, writes);
+    shiftSubtreeWrites(graph, childId, dx, dy, writes);
   }
 }
 
