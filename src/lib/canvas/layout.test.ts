@@ -6,11 +6,13 @@ import {
   createGraph,
   moveNode,
   placeNode,
+  resizeNode,
   type ConversationGraph,
 } from "@/lib/conversation/graph";
 import {
   NODE_WIDTH_DESKTOP,
   autoPlaceOnCreate,
+  nodeWidthsFrom,
   reflowChildrenOnCreate,
   tidyLayout,
   type NodeHeights,
@@ -448,5 +450,89 @@ describe("reflowChildrenOnCreate", () => {
     const a3y = graph.nodesById.a3.position.y;
     assert.equal(a1y, a2y);
     assert.equal(a2y, a3y);
+  });
+
+  it("TES-110 regression: resizing a parent without reflowing lets a later preview land on its real children", () => {
+    // Documents the bug this ticket fixed: `resizeNode` (graph.ts) only ever
+    // patches `size` — on its own it never moves the parent's existing
+    // children. A preview computed afterward from the parent's new
+    // (post-resize) width, exactly like `previewNodePosition` in
+    // canvas-app.tsx, disagrees with where the real siblings actually are.
+    let graph = createGraph();
+    graph = addAnswered(graph, "root", null);
+    graph = addAnsweredAndReflow(graph, "reply", "root");
+    graph = addAnsweredAndReflow(graph, "fork", "root");
+
+    graph = resizeNode(graph, "root", { width: 640, height: 300 });
+
+    // The real siblings' rects, straight off the graph the UI actually
+    // renders from — `resizeNode` alone never touched them.
+    const heights: NodeHeights = new Map([["root", 300]]);
+    const realWidths = nodeWidthsFrom(graph, WIDTH);
+    const realReplyRect = rectFor(graph, "reply", WIDTH, heights, realWidths);
+    const realForkRect = rectFor(graph, "fork", WIDTH, heights, realWidths);
+
+    // `previewNodePosition` only ever reads the new node's position back out
+    // of this hypothetical reflow — it never applies the rest of the reflow's
+    // writes (i.e. reply/fork's recomputed positions) to the real graph, so
+    // comparing against the real, un-reflowed siblings above is the faithful
+    // reproduction of what actually renders on screen.
+    const { graph: withPreview } = addNode(graph, {
+      id: "__preview__",
+      parentId: "root",
+      prompt: "",
+      position: ORIGIN,
+    });
+    const reflowed = reflowChildrenOnCreate(
+      withPreview,
+      "root",
+      WIDTH,
+      heights,
+      nodeWidthsFrom(withPreview, WIDTH),
+    );
+    const previewRect = rectFor(reflowed, "__preview__", WIDTH, heights, nodeWidthsFrom(reflowed, WIDTH));
+
+    assert.ok(
+      rectsOverlap(previewRect, realReplyRect) || rectsOverlap(previewRect, realForkRect),
+      "sanity check: an un-reflowed resize must reproduce the reported overlap",
+    );
+  });
+
+  it("TES-110: reflowing a parent's children on resize keeps a later preview clear of them", () => {
+    // The fix: `use-canvas-controller.ts`'s `resizeNode` now reflows the
+    // resized node's own children immediately after patching its size, the
+    // same reflow `previewNodePosition` runs to compute the skeleton. Once
+    // both start from the same post-resize state, they agree.
+    let graph = createGraph();
+    graph = addAnswered(graph, "root", null);
+    graph = addAnsweredAndReflow(graph, "reply", "root");
+    graph = addAnsweredAndReflow(graph, "fork", "root");
+
+    graph = resizeNode(graph, "root", { width: 640, height: 300 });
+    const heights: NodeHeights = new Map([["root", 300]]);
+    graph = reflowChildrenOnCreate(graph, "root", WIDTH, heights, nodeWidthsFrom(graph, WIDTH));
+
+    assertNoOverlaps(graph, WIDTH, heights, nodeWidthsFrom(graph, WIDTH));
+
+    const { graph: withPreview } = addNode(graph, {
+      id: "__preview__",
+      parentId: "root",
+      prompt: "",
+      position: ORIGIN,
+    });
+    const reflowed = reflowChildrenOnCreate(
+      withPreview,
+      "root",
+      WIDTH,
+      heights,
+      nodeWidthsFrom(withPreview, WIDTH),
+    );
+    const widths = nodeWidthsFrom(reflowed, WIDTH);
+    const previewRect = rectFor(reflowed, "__preview__", WIDTH, heights, widths);
+    const replyRect = rectFor(reflowed, "reply", WIDTH, heights, widths);
+    const forkRect = rectFor(reflowed, "fork", WIDTH, heights, widths);
+
+    assert.ok(!rectsOverlap(previewRect, replyRect), "preview must not overlap the real reply sibling");
+    assert.ok(!rectsOverlap(previewRect, forkRect), "preview must not overlap the real fork sibling");
   });
 });

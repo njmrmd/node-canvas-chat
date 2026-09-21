@@ -571,9 +571,26 @@ export function useCanvasController(options: {
     });
   }, [isMobile, nodeHeightsRef]);
 
+  // TES-110: a resize changes the resized node's own width/height, which
+  // shifts where its children's row should sit — without this, the real
+  // siblings stay frozen at their pre-resize slots while the composer's
+  // skeleton preview (`previewNodePosition` in `canvas-app.tsx`) recomputes
+  // a fresh reflow from the *post*-resize size and lands on top of them.
+  // Reflowing here on every drag tick keeps both in agreement, the same way
+  // `createAndStream` and `tidy` above already do for their own writes.
   const resizeNode = useCallback((nodeId: string, size: Size) => {
-    setGraph((g) => resizeNodeInGraph(g, nodeId, size));
-  }, []);
+    setGraph((g) => {
+      const resized = resizeNodeInGraph(g, nodeId, size);
+      const defaultWidth = widthFor(isMobile);
+      return reflowChildrenOnCreate(
+        resized,
+        nodeId,
+        defaultWidth,
+        nodeHeightsRef?.current ?? NO_HEIGHTS,
+        nodeWidthsFrom(resized, defaultWidth),
+      );
+    });
+  }, [isMobile, nodeHeightsRef]);
 
   const toggleBodyCollapsed = useCallback((nodeId: string) => {
     setGraph((g) => {
