@@ -65,6 +65,37 @@ The browser lands in Playwright's own cache (`~/.cache/ms-playwright` on Linux,
 `~/Library/Caches/ms-playwright` on macOS), not in `node_modules`, so it is
 shared across checkouts and survives `rm -rf node_modules`.
 
+## Skipped specs are loud, on purpose
+
+`e2e/skip-reporter.ts` runs on every invocation of `pnpm test:e2e`, local or
+CI, and prints a banner listing every skipped test — see TES-119. A spec that
+self-skips because `DATABASE_URL` / `E2E_ANTHROPIC_API_KEY` are absent is
+expected in most runs, but it must never be silent: `branch-off-earlier-node.spec.ts`
+skipped in every CI run for weeks with nothing surfacing that in the log.
+
+Set `E2E_FAIL_ON_SKIP=1` to turn a skip into a failing run instead of a
+loud-but-green one. Only set it where a skip is never expected to happen —
+i.e. a run that has the real secrets and should be exercising every spec.
+Leave it unset for local development and for the per-PR `e2e` job in
+`ci.yml`, where running without a database or a billable key is the normal
+case.
+
+## The real-key guard
+
+`branch-off-earlier-node.spec.ts` and the real-reply cases in
+`sign-up-to-first-chat.spec.ts` need a real, billable Anthropic key and a
+deployment with a database. Nothing in the per-PR `e2e` job supplies either,
+so those specs skip there by design — see `.github/workflows/ci.yml`.
+
+`.github/workflows/e2e-nightly.yml` is where they actually run: once a day,
+against production (`E2E_BASE_URL`, defaulting to
+`https://node-canvas-chat.vercel.app` — production already has
+`DATABASE_URL`/`KEY_VAULT_ENCRYPTION_KEY`, so nothing needs duplicating into
+GitHub), with `E2E_ANTHROPIC_API_KEY` from a repo secret and
+`E2E_FAIL_ON_SKIP=1` so a broken or missing secret is a red run, not a green
+one that quietly did nothing. Trigger it by hand with `workflow_dispatch` to
+check a fix before waiting for the schedule.
+
 ## Writing specs
 
 - Put specs in this directory, named `*.spec.ts`.

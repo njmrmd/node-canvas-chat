@@ -1,0 +1,85 @@
+name: E2E nightly (real key)
+
+# TES-119: e2e/branch-off-earlier-node.spec.ts and the real-reply cases in
+# sign-up-to-first-chat.spec.ts need a real, billable Anthropic key and a
+# deployment with a real database — neither belongs on the per-PR `e2e` job
+# in ci.yml, which runs on every push with no secrets and is meant to stay
+# free. This job is the place those specs actually run: once a day, against
+# production (so no DATABASE_URL / KEY_VAULT_ENCRYPTION_KEY has to be
+# duplicated into GitHub — production already has them), with the one real
+# key that costs money.
+#
+# E2E_FAIL_ON_SKIP=1 makes a self-skip fail the run instead of reading
+# green — see e2e/skip-reporter.ts. That is the whole point of this job: a
+# skip here means the secret is missing or broken, not that a real check
+# passed.
+#
+# Needs a repo secret this workflow does not create: `E2E_ANTHROPIC_API_KEY`.
+# That is a billable Anthropic key and provisioning it is a cost decision,
+# not an engineering one — see TES-119 for the request routed to Chief of
+# staff. Until it exists, this job fails loudly on schedule rather than
+# silently skipping, which is deliberate: a red nightly is a better signal
+# than a guard nobody knows is disconnected.
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-nightly
+  cancel-in-progress: false
+
+jobs:
+  e2e-real-key:
+    runs-on: ubuntu-latest
+    env:
+      E2E_BASE_URL: ${{ vars.E2E_BASE_URL || 'https://node-canvas-chat.vercel.app' }}
+      E2E_ANTHROPIC_API_KEY: ${{ secrets.E2E_ANTHROPIC_API_KEY }}
+      E2E_FAIL_ON_SKIP: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Confirm the real-key secret is configured
+        run: |
+          if [ -z "$E2E_ANTHROPIC_API_KEY" ]; then
+            echo "::error::E2E_ANTHROPIC_API_KEY repo secret is not set — the TES-117/TES-119 real-key guard has never actually run. Provisioning it is a cost decision for Chief of staff/the CEO, not something this job can fix. See TES-119."
+            exit 1
+          fi
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Keyed on the exact Playwright version, same as the ci.yml e2e job —
+      # see that job's comment for why.
+      - name: Resolve the pinned Playwright version
+        id: playwright
+        run: echo "version=$(node -p "require('./package.json').devDependencies['@playwright/test']")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache the pinned browser
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+
+      - name: Install the pinned browser
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Browser tests against production, with a real key
+        run: pnpm test:e2e
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report-nightly
+          path: playwright-report/
+          retention-days: 14

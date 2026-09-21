@@ -32,9 +32,13 @@ export default defineConfig({
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
   workers: process.env.CI ? 1 : undefined,
+  // `./e2e/skip-reporter.ts` is on every run, CI or local — see TES-119. A
+  // spec that self-skips (missing DATABASE_URL / E2E_ANTHROPIC_API_KEY) is
+  // still expected day to day, but it must never again be silent the way it
+  // was for the TES-117 guard.
   reporter: process.env.CI
-    ? [["github"], ["html", { open: "never" }]]
-    : [["list"]],
+    ? [["github"], ["html", { open: "never" }], ["./e2e/skip-reporter.ts"]]
+    : [["list"], ["./e2e/skip-reporter.ts"]],
   use: {
     baseURL,
     trace: "on-first-retry",
