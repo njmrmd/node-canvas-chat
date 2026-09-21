@@ -98,6 +98,20 @@
     color var(--dur-fast) var(--ease-out);
 }
 
+/* TES-117: confirms every real composer-target change (Branch, selecting a
+ * node, Send moving to a new leaf) is visible, so a Branch click that
+ * silently fails to register — the confirmed root cause — reads as an
+ * obvious no-op rather than a trap that sends into the wrong parent. */
+.cv-composer-target[data-changed="true"] {
+  animation: cv-composer-target-pulse 600ms var(--ease-out) 1;
+}
+
+@keyframes cv-composer-target-pulse {
+  0% { background: var(--accent-soft); transform: scale(1); }
+  30% { background: var(--accent); color: var(--accent-fg); transform: scale(1.06); }
+  100% { background: var(--accent-soft); transform: scale(1); }
+}
+
 .cv-node:hover .cv-resize-handle,
 .cv-node:focus-within .cv-resize-handle,
 .cv-resize-handle:focus-visible {
@@ -370,6 +384,11 @@
   }
 
   .cv-branch-handle[data-pulse="true"] {
+    animation: none;
+    box-shadow: 0 0 0 2px var(--accent) inset;
+  }
+
+  .cv-composer-target[data-changed="true"] {
     animation: none;
     box-shadow: 0 0 0 2px var(--accent) inset;
   }

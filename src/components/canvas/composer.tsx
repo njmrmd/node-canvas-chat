@@ -31,6 +31,41 @@ export function Composer(props: ComposerProps) {
   const ref = props.composerRef ?? localRef;
   const isCentered = props.variant === "centered";
 
+  // TES-117: a Branch click that never reaches its handler (the confirmed
+  // root cause — the composer target silently stays on the old node) used to
+  // give a user zero feedback either way. This can't detect that specific
+  // failure — there's no click to hook into if it never arrives — but it
+  // makes every *successful* target change visibly confirmed, so "I clicked
+  // Branch and nothing happened" becomes an obvious, actionable signal
+  // instead of a silent one. Comparing against last-seen during render (the
+  // React-recommended way to derive state from a prop change, see "Adjusting
+  // some state when a prop changes") instead of in an effect skips the
+  // mount-time transition (no prior target to have "changed" from) without
+  // triggering the no-synchronous-setState-in-effect lint rule.
+  // `pulseSeq` (not just `justChanged`) drives the effect below so a second
+  // real change arriving before the first pulse finishes still gets its own
+  // full window — `justChanged` alone would stay `true` across both changes,
+  // never re-triggering the effect, so the *first* change's stale timer would
+  // cut the *second* change's pulse short. Exactly the case this exists for:
+  // Send moves the target to the newest node, then an immediate Branch click
+  // moves it again within that same 600ms.
+  const currentTargetId = props.targetNodeId ?? null;
+  const [justChanged, setJustChanged] = useState(false);
+  const [pulseSeq, setPulseSeq] = useState(0);
+  const [lastTargetId, setLastTargetId] = useState(currentTargetId);
+  if (lastTargetId !== currentTargetId) {
+    setLastTargetId(currentTargetId);
+    if (currentTargetId !== null) {
+      setJustChanged(true);
+      setPulseSeq((n) => n + 1);
+    }
+  }
+  useEffect(() => {
+    if (!justChanged) return;
+    const timer = setTimeout(() => setJustChanged(false), 600);
+    return () => clearTimeout(timer);
+  }, [justChanged, pulseSeq]);
+
   // A starter chip (§3) "fills the composer and focuses it; it does not
   // send" — `initialValue` is how the parent hands over that text after
   // mount, so this has to re-sync on change rather than only seeding state
@@ -70,7 +105,9 @@ export function Composer(props: ComposerProps) {
     >
       {!isCentered && props.targetLabel ? (
         <div
+          className="cv-composer-target"
           data-composer-target-id={props.targetNodeId ?? undefined}
+          data-changed={justChanged ? "true" : undefined}
           style={{
             display: "inline-flex",
             alignItems: "center",
