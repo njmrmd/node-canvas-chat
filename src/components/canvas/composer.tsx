@@ -8,6 +8,12 @@ export type ComposerVariant = "docked" | "centered";
 export type ComposerProps = {
   variant: ComposerVariant;
   targetLabel: string | null;
+  /** TES-117 investigation: the real node id `targetLabel` was derived from,
+   * exposed as `data-composer-target-id` on the badge below so a script (or
+   * a person) can read `effectiveComposerTarget`'s actual value without
+   * parsing "Node {n}" back into an id. Debug-only — no product behaviour
+   * reads this attribute. */
+  targetNodeId?: string | null;
   onUnbindTarget?: () => void;
   disabled: boolean;
   disabledPlaceholder?: string;
@@ -64,6 +70,7 @@ export function Composer(props: ComposerProps) {
     >
       {!isCentered && props.targetLabel ? (
         <div
+          data-composer-target-id={props.targetNodeId ?? undefined}
           style={{
             display: "inline-flex",
             alignItems: "center",

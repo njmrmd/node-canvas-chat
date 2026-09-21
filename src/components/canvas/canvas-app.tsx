@@ -1428,6 +1428,7 @@ export function CanvasApp({
                     <Composer
                       variant="docked"
                       targetLabel={composerTargetLabel}
+                      targetNodeId={effectiveComposerTarget}
                       disabled={composerDisabledReason !== null}
                       disabledPlaceholder={disabledPlaceholder}
                       onSend={controller.send}
