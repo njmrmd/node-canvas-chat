@@ -20,6 +20,22 @@ export function isDatabaseConfigured(): boolean {
   return Boolean(process.env.DATABASE_URL);
 }
 
+/**
+ * TLS with the server's certificate verified against the system CAs, which is
+ * what Neon and every other managed Postgres presents. An `sslmode` in the URL
+ * overrides this (`pg` merges the parsed URL over these options), so
+ * `sslmode=disable` still turns TLS off for a local database. Use
+ * `sslmode=verify-full` in hosted URLs: `pg` 8 treats `require` as
+ * verify-full, but `pg` 9 will give it libpq's weaker, unverified meaning.
+ */
+export function sslOptionFor(
+  connectionString: string,
+): { rejectUnauthorized: true } | undefined {
+  return connectionString.includes("sslmode=disable")
+    ? undefined
+    : { rejectUnauthorized: true };
+}
+
 function getPool(): Pool {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
@@ -51,12 +67,7 @@ function getPool(): Pool {
       // instead of eating the request's full patience window. `fail closed`.
       statement_timeout: 10_000,
       query_timeout: 10_000,
-      // Managed Postgres terminates TLS with a certificate we do not pin; the
-      // connection string's sslmode governs. This keeps `pg` from rejecting
-      // Neon's chain while still requiring TLS via the URL.
-      ssl: connectionString.includes("sslmode=disable")
-        ? undefined
-        : { rejectUnauthorized: false },
+      ssl: sslOptionFor(connectionString),
     });
 
     // An idle client erroring out must not take the process down.
