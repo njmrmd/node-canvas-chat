@@ -25,3 +25,11 @@ export const MAX_TOTAL_CHARS = 400_000;
 
 /** Characters in the system prompt. */
 export const MAX_SYSTEM_CHARS = 10_000;
+
+/**
+ * Bytes in the request body. Sized so the character caps above are the ones
+ * that actually bind: 410k characters at up to 3 UTF-8 bytes each is ~1.2 MB,
+ * plus JSON escaping and envelope. The old shared 256 KB default refused a
+ * branch well before it reached `MAX_TOTAL_CHARS`.
+ */
+export const MAX_BODY_BYTES = 2 * 1024 * 1024;

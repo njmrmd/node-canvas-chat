@@ -209,6 +209,7 @@ export function CanvasApp({
     composerDisabledReason,
     loadState,
     isOnline,
+    canvasTooLarge,
     rateLimit,
     hasBranchedOnce,
     queuePosition,
@@ -1141,6 +1142,21 @@ export function CanvasApp({
           }}
         >
           {copy("offline.banner")}
+        </div>
+      ) : null}
+
+      {canvasTooLarge ? (
+        <div
+          role="alert"
+          style={{
+            padding: "var(--space-2) var(--space-5)",
+            background: "var(--surface-2)",
+            color: "var(--warning)",
+            font: "var(--text-xs)",
+            borderBottom: "1px solid var(--border-subtle)",
+          }}
+        >
+          {copy("save.tooLarge.banner")}
         </div>
       ) : null}
 

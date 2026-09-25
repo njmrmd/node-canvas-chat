@@ -12,6 +12,7 @@ import { NextResponse } from "next/server";
  */
 export const ERROR_CODES = [
   "invalid_request", // body failed validation; `fields` says which
+  "payload_too_large", // body is over the route's byte limit
   "unauthenticated", // no valid session
   "forbidden", // signed in, but not entitled to this resource
   "not_found",
@@ -32,6 +33,7 @@ export type ErrorCode = (typeof ERROR_CODES)[number];
 
 const STATUS_BY_CODE: Record<ErrorCode, number> = {
   invalid_request: 400,
+  payload_too_large: 413,
   unauthenticated: 401,
   forbidden: 403,
   not_found: 404,
@@ -147,26 +149,34 @@ export function noContent(headers?: Record<string, string>): NextResponse {
  * Parses a JSON body, defensively. `input trust boundaries`: the body is
  * hostile until proven otherwise, so we cap the size, require the content
  * type, and reject anything that is not a plain object.
+ *
+ * The cap is in UTF-8 bytes, per route. Small forms keep the default; routes
+ * whose payload legitimately grows (a chat branch, a whole canvas) pass their
+ * own `maxBytes`, sized from what they are allowed to carry.
  */
-const MAX_BODY_BYTES = 256 * 1024;
+export const DEFAULT_MAX_BODY_BYTES = 256 * 1024;
 
 export async function readJsonBody(
   request: Request,
+  options?: { maxBytes?: number },
 ): Promise<Record<string, unknown>> {
+  const maxBytes = options?.maxBytes ?? DEFAULT_MAX_BODY_BYTES;
+
   const contentType = request.headers.get("content-type") ?? "";
   if (!contentType.toLowerCase().includes("application/json")) {
     throw new ApiError("invalid_request", "Expected a JSON request body.");
   }
 
   const length = Number(request.headers.get("content-length") ?? "0");
-  if (Number.isFinite(length) && length > MAX_BODY_BYTES) {
-    throw new ApiError("invalid_request", "Request body is too large.");
+  if (Number.isFinite(length) && length > maxBytes) {
+    throw tooLarge();
   }
 
-  const raw = await request.text();
-  if (raw.length > MAX_BODY_BYTES) {
-    throw new ApiError("invalid_request", "Request body is too large.");
+  const bytes = new Uint8Array(await request.arrayBuffer());
+  if (bytes.byteLength > maxBytes) {
+    throw tooLarge();
   }
+  const raw = new TextDecoder().decode(bytes);
 
   let parsed: unknown;
   try {
@@ -180,4 +190,8 @@ export async function readJsonBody(
   }
 
   return parsed as Record<string, unknown>;
+}
+
+function tooLarge(): ApiError {
+  return new ApiError("payload_too_large", "Request body is too large.");
 }

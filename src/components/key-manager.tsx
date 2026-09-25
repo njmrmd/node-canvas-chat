@@ -658,6 +658,10 @@ function AccountSection({
           {hasKeys ? " the stored key" : " any stored key"} in one transaction.
           This cannot be undone and there is no export.
         </p>
+        <p className="mt-1.5 text-sm leading-relaxed text-foreground">
+          Your key stays valid at the provider — revoke it there too if you
+          want it dead.
+        </p>
 
         <div className="mt-3">
           {confirming ? (

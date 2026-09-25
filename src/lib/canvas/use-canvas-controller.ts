@@ -34,7 +34,7 @@ import {
   type Size,
 } from "@/lib/conversation/graph";
 import { streamChat } from "@/lib/conversation/stream";
-import { apiFetch, type RateLimitSnapshot } from "@/lib/api-client";
+import { ApiCallError, apiFetch, type RateLimitSnapshot } from "@/lib/api-client";
 import type { CanvasState } from "@/lib/canvas-store";
 import {
   NODE_WIDTH_DESKTOP,
@@ -158,6 +158,8 @@ export function useCanvasController(options: {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [rateLimit, setRateLimit] = useState<RateLimitSnapshot | null>(null);
+  // The one save failure that retrying cannot fix, so it is the one we show.
+  const [canvasTooLarge, setCanvasTooLarge] = useState(false);
   const [queue, setQueue] = useState<string[]>([]);
   const [activeCount, setActiveCount] = useState(0);
   const [streamStartedAt, setStreamStartedAt] = useState<Record<string, number>>({});
@@ -228,10 +230,16 @@ export function useCanvasController(options: {
       hasBranchedOnce,
     };
     // Fire-and-forget: §2.5 "a failed position write never blocks or surfaces
-    // an error; it retries on the next write."
-    apiFetch("/api/canvas", { method: "PUT", body: payload }).catch(() => {
-      dirtyRef.current = true;
-    });
+    // an error; it retries on the next write." Except a canvas over the save
+    // limit: every retry fails the same way, so staying silent loses work.
+    apiFetch("/api/canvas", { method: "PUT", body: payload })
+      .then(() => setCanvasTooLarge(false))
+      .catch((error: unknown) => {
+        dirtyRef.current = true;
+        if (error instanceof ApiCallError && error.code === "payload_too_large") {
+          setCanvasTooLarge(true);
+        }
+      });
   }, [loadState, viewport, selectedNodeId, hasBranchedOnce]);
 
   useEffect(() => {
@@ -617,6 +625,7 @@ export function useCanvasController(options: {
     loadState,
     isOnline,
     rateLimit,
+    canvasTooLarge,
     hasBranchedOnce,
     queuePosition,
     streamStartedAt,
