@@ -8,6 +8,7 @@ import { requireSessionUser } from "@/lib/auth/session";
  * the same numbers this route enforces — one edit changes both sides.
  */
 import {
+  MAX_BODY_BYTES,
   MAX_MESSAGES,
   MAX_MESSAGE_CHARS,
   MAX_SYSTEM_CHARS,
@@ -109,7 +110,7 @@ export const POST = withRoute("chat", async (request: Request) => {
   const user = await requireSessionUser();
   const limit = await enforce(POLICIES.chat, userSubject(user.id));
 
-  const body = await readJsonBody(request);
+  const body = await readJsonBody(request, { maxBytes: MAX_BODY_BYTES });
   const provider = requireProvider(body.provider);
   const model = requireModel(provider, body.model);
   const messages = parseMessages(body.messages);

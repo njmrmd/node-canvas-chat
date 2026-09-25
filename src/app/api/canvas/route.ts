@@ -8,6 +8,14 @@ import type { ConversationGraph } from "@/lib/conversation/graph";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+/**
+ * The PUT carries the whole graph, so it grows with every reply. 4 MB sits
+ * just under Vercel's 4.5 MB function request limit — past that the platform
+ * refuses the request before this route runs. A canvas that outgrows it gets
+ * `payload_too_large`, which the canvas surfaces instead of retrying silently.
+ */
+const CANVAS_MAX_BODY_BYTES = 4 * 1024 * 1024;
+
 function isGraphShaped(value: unknown): value is ConversationGraph {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Record<string, unknown>;
@@ -50,7 +58,7 @@ export const PUT = withRoute("canvas.put", async (request: Request) => {
   const user = await requireSessionUser();
   await enforce(POLICIES.canvasWrite, userSubject(user.id));
 
-  const body = await readJsonBody(request);
+  const body = await readJsonBody(request, { maxBytes: CANVAS_MAX_BODY_BYTES });
   const fallback = emptyCanvasState();
 
   const graph = isGraphShaped(body.graph) ? body.graph : fallback.graph;

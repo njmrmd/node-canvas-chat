@@ -56,6 +56,8 @@ const SPEC_9 = {
   "provider.cta": "Connect model access",
   "offline.banner":
     "You're offline. Your canvas is here, but new messages will fail.",
+  "save.tooLarge.banner":
+    "This canvas is too large to save. New changes will be lost on reload until you delete some nodes.",
   "branch.disabled": "Available when the reply finishes.",
 } as const;
 

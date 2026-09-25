@@ -85,7 +85,10 @@ export function presentError(
   if (error.message === CLIENT_TIMEOUT_MESSAGE) {
     return withCategory("timeout", COPY["node.error.timeout"]);
   }
-  if (error.code === "invalid_request" && /too long/i.test(error.message)) {
+  if (
+    error.code === "payload_too_large" ||
+    (error.code === "invalid_request" && /too long/i.test(error.message))
+  ) {
     return withCategory("context_too_long", COPY["node.error.context_too_long"]);
   }
   return withCategory("unknown", COPY["node.error.unknown"]);
