@@ -1,4 +1,5 @@
 import { Pool, type QueryResultRow } from "pg";
+import { tlsConnectionConfig } from "@/lib/db-tls.mjs";
 import { ApiError } from "@/lib/http";
 
 /**
@@ -20,22 +21,6 @@ export function isDatabaseConfigured(): boolean {
   return Boolean(process.env.DATABASE_URL);
 }
 
-/**
- * TLS with the server's certificate verified against the system CAs, which is
- * what Neon and every other managed Postgres presents. An `sslmode` in the URL
- * overrides this (`pg` merges the parsed URL over these options), so
- * `sslmode=disable` still turns TLS off for a local database. Use
- * `sslmode=verify-full` in hosted URLs: `pg` 8 treats `require` as
- * verify-full, but `pg` 9 will give it libpq's weaker, unverified meaning.
- */
-export function sslOptionFor(
-  connectionString: string,
-): { rejectUnauthorized: true } | undefined {
-  return connectionString.includes("sslmode=disable")
-    ? undefined
-    : { rejectUnauthorized: true };
-}
-
 function getPool(): Pool {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
@@ -49,7 +34,8 @@ function getPool(): Pool {
   // Reuse across hot reloads in dev and across invocations on a warm instance.
   if (!globalThis.__ncc_pool) {
     globalThis.__ncc_pool = new Pool({
-      connectionString,
+      // Verified TLS, whatever sslmode the URL carries (see db-tls.mjs).
+      ...tlsConnectionConfig(connectionString),
       max: 1,
       idleTimeoutMillis: 30_000,
       connectionTimeoutMillis: 10_000,
@@ -67,7 +53,6 @@ function getPool(): Pool {
       // instead of eating the request's full patience window. `fail closed`.
       statement_timeout: 10_000,
       query_timeout: 10_000,
-      ssl: sslOptionFor(connectionString),
     });
 
     // An idle client erroring out must not take the process down.
