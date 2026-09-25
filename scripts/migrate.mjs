@@ -16,6 +16,7 @@ import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
+import { tlsConnectionConfig } from "../src/lib/db-tls.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const dir = path.join(root, "db", "migrations");
@@ -48,7 +49,7 @@ if (!connectionString) {
   process.exit(1);
 }
 
-const client = new pg.Client({ connectionString });
+const client = new pg.Client(tlsConnectionConfig(connectionString));
 await client.connect();
 
 try {
