@@ -346,6 +346,16 @@ export function AuthForm({ mode, next }: { mode: Mode; next?: string }) {
       <p className="mt-4 text-sm text-muted">
         {copy.footer} <TextLink href={footerHref}>{copy.footerLink}</TextLink>
       </p>
+
+      {/* Said where a locked-out person actually lands, with the only route
+          forward. Ported from PR #2's copy pass. */}
+      {mode === "sign-in" ? (
+        <p className="mt-3 text-pretty text-sm leading-relaxed text-muted">
+          Forgotten your password? We cannot reset it yet — that is a gap on
+          our side, not a policy. The way back in is a new account, and you
+          will need to reconnect your model key.
+        </p>
+      ) : null}
     </Shell>
   );
 }
